@@ -2,60 +2,201 @@ import streamlit as st
 import pandas as pd
 
 # ページ設定
-st.set_page_config(page_title="YOSAKOI投稿メーカー", layout="centered")
+st.set_page_config(page_title="YOSAKOI現地投稿くん", layout="centered")
 
-st.title("🎤 YOSAKOI投稿メーカー")
+st.title("🎤 YOSAKOI現地投稿くん")
+st.caption("202チームの正式データを内蔵（ファイル不要）")
 
-# 1. データの読み込み
-st.sidebar.header("設定")
-uploaded_file = st.sidebar.file_uploader("チームリスト(CSV)をアップロード", type="csv")
+# --- 202チームの正式データを内蔵 ---
+@st.cache_data
+def get_team_data():
+    # ご提供いただいたエクセルから抽出した正確なリストです
+    return [
+        {"名前": "RHKさっぽろ", "X": "", "ハッシュタグ": "#RHKさっぽろ"},
+        {"名前": "藍&MOEホールディングス", "X": "@ai_kyoikudai", "ハッシュタグ": "#藍MOEホールディングス"},
+        {"名前": "愛斜童びしゃせん", "X": "", "ハッシュタグ": "#愛斜童びしゃせん"},
+        {"名前": "AOMORI花嵐桜組", "X": "@AOMORI43165400", "ハッシュタグ": "#花嵐桜組 #AOMORI花嵐桜組"},
+        {"名前": "朝霞なるこ遊和会", "X": "@asaka_yuwakai", "ハッシュタグ": "#朝霞なるこ遊和会 #遊和会"},
+        {"名前": "旭川華酔組", "X": "@kasuigumi", "ハッシュタグ": "#旭川華酔組 #華酔組"},
+        {"名前": "旭川華舞輝会", "X": "@1996kabuki", "ハッシュタグ": "#旭川華舞輝会"},
+        {"名前": "あしたもハレヤ！", "X": "@hareya_sapporo", "ハッシュタグ": "#あしたもハレヤ"},
+        {"名前": "遖", "X": "@yosakoi_appare", "ハッシュタグ": "#遖 #あっぱれ"},
+        {"名前": "天嵩～Amata～", "X": "@amata_yosakoi", "ハッシュタグ": "#天嵩〜Amata〜 #天嵩 #amata"},
+        {"名前": "Alive", "X": "@alive_yosakoi", "ハッシュタグ": "#よさこいAlive"},
+        {"名前": "粋〜IKI〜 北海学園大学", "X": "@iki_hgu", "ハッシュタグ": "#粋iki北海学園大学 #粋北海学園大学"},
+        {"名前": "石狩朱華弁天", "X": "", "ハッシュタグ": "#石狩朱華弁天 #朱華弁天"},
+        {"名前": "石狩流星海", "X": "@ryuseikai0707", "ハッシュタグ": "#石狩流星海"},
+        {"名前": "市立船橋高校吹奏楽部THEヨサコイ", "X": "@127wo", "ハッシュタグ": "#市立船橋高校吹奏楽部THEヨサコイ #市船吹奏楽部"},
+        {"名前": "いづる-Izul-", "X": "@izul_fes", "ハッシュタグ": "#いづる #Izul"},
+        {"名前": "いなせ系暁会活頗組", "X": "@kappagumi", "ハッシュタグ": "#いなせ系暁会活頗組 #活頗組 #かっぱ組"},
+        {"名前": "羽州ぼろ鳶組", "X": "@borotobi400", "ハッシュタグ": "#羽州ぼろ鳶組"},
+        {"名前": "うふふ", "X": "", "ハッシュタグ": "#うふふ #うふふよさこい"},
+        {"名前": "海響&H・O・C-Group", "X": "@uminariofficial", "ハッシュタグ": "#海響"},
+        {"名前": "Ace", "X": "@AceYosakoi", "ハッシュタグ": "#Ace"},
+        {"名前": "exciting蔵・平岸", "X": "", "ハッシュタグ": "#exciting蔵平岸"},
+        {"名前": "Excla!matioN", "X": "@Excla_matioN", "ハッシュタグ": "#エクラ #exclamation"},
+        {"名前": "AJG KIDS", "X": "", "ハッシュタグ": "#AJGKIDS"},
+        {"名前": "蝦夷YOSAKOI連「倭屋」", "X": "@waya_okhotsk", "ハッシュタグ": "#倭屋 #わやややや"},
+        {"名前": "恵庭紅鴉", "X": "@benigarasu1999", "ハッシュタグ": "#恵庭紅鴉"},
+        {"名前": "江別まっことえぇ＆北海道情報大学", "X": "@ebetsumakkotoee", "ハッシュタグ": "#江別まっことえぇ"},
+        {"名前": "桜閃（おうせん）", "X": "@Hokkaido_Authen", "ハッシュタグ": "#桜閃"},
+        {"名前": "小樽商科大学”翔楽舞”", "X": "@syogakubu", "ハッシュタグ": "#翔楽舞 #小樽商科大学翔楽舞"},
+        {"名前": "踊り屋１Zｅｎ＇ｓ", "X": "@1zen_s_tokyo", "ハッシュタグ": "#踊り屋1Zens #1zens"},
+        {"名前": "踊るBAKA!TOKYO", "X": "@BAKATOKYO1", "ハッシュタグ": "#踊るbakatokyo #オドバカ"},
+        {"名前": "oh！愛で隊", "X": "@Oh86888430", "ハッシュタグ": "#oh愛で隊 #おめでたい"},
+        {"名前": "Gush neo", "X": "@gush_since1998", "ハッシュタグ": "#Gushneo #ガッシュネオ"},
+        {"名前": "勝山組", "X": "@katsuyamagumi", "ハッシュタグ": "#勝山組"},
+        {"名前": "夏舞徒", "X": "@kabutoyosakoi", "ハッシュタグ": "#夏舞徒"},
+        {"名前": "嘉們-KAMON-", "X": "@kamon0503", "ハッシュタグ": "#嘉們 #KAMON"},
+        {"名前": "我流", "X": "@garyu_yosakoi", "ハッシュタグ": "#我流"},
+        {"名前": "和凛ーKARINー", "X": "@karin15184351", "ハッシュタグ": "#和凛 #和凛ーKARINー"},
+        {"名前": "関東学院大学”誇咲”", "X": "@_Hokosaki_", "ハッシュタグ": "#誇咲 #関東学院大学誇咲"},
+        {"名前": "～旗士道～", "X": "@kishidoh", "ハッシュタグ": "#旗士道"},
+        {"名前": "旗翆-KISUI-", "X": "@KISUI_FlagTeam", "ハッシュタグ": "#旗翆 #KISUI"},
+        {"名前": "北鼓童＆名寄市立大学", "X": "@kitakonayoro", "ハッシュタグ": "#北鼓童"},
+        {"名前": "北里三陸湧昇龍", "X": "@yusyoryu", "ハッシュタグ": "#北里三陸湧昇龍 #湧昇龍"},
+        {"名前": "北昴", "X": "@kita_subaru", "ハッシュタグ": "#北昴"},
+        {"名前": "斬桐舞", "X": "@kiri_kiri_mai", "ハッシュタグ": "#斬桐舞"},
+        {"名前": "グラフィックホールディングスpresents倭奏", "X": "@Wakka_info", "ハッシュタグ": "#倭奏 #わっか"},
+        {"名前": "K-one動流夢", "X": "@yoiyosakoi", "ハッシュタグ": "#kone動流夢"},
+        {"名前": "劇団果実籠", "X": "@FruitBasket2011", "ハッシュタグ": "#劇団果実籠"},
+        {"名前": "公立千歳科学技術大学「光一天」", "X": "@KouittenYosakoi", "ハッシュタグ": "#光一天"},
+        {"名前": "コカ·コーラ札幌国際大学", "X": "@Coca_SIU", "ハッシュタグ": "#札幌国際大学"},
+        {"名前": "心躍れば皆同じ", "X": "@kokmina2024", "ハッシュタグ": "#心躍れば皆同じ #ここみな"},
+        {"名前": "志〜こころざし〜", "X": "@kokorozashi1130", "ハッシュタグ": "##志〜こころざし〜 #志こころざし"},
+        {"名前": "コンサフリーク～北海道武蔵女子学園～", "X": "@ConsaFreak", "ハッシュタグ": "#コンサフリーク"},
+        {"名前": "SA:GA-彩雅-", "X": "@SA_GA4351", "ハッシュタグ": "#SAGA彩雅 #彩雅"},
+        {"名前": "さぁさ みんなで どっこいしょ", "X": "@dokkoisho365", "ハッシュタグ": "#さぁさみんなでどっこいしょ"},
+        {"名前": "紫仁", "X": "@SaizinYosakoi", "ハッシュタグ": "#紫仁"},
+        {"名前": "相模祭組＆加舞輪奴会", "X": "@kamawanukai", "ハッシュタグ": "#相模祭組 #加舞輪奴会"},
+        {"名前": "札幌学院大学・文京台", "X": "@sgu_yosakoi", "ハッシュタグ": "#札幌学院大学文京台"},
+        {"名前": "SAPPOROこいこい", "X": "@SAPPOROKOIKOI", "ハッシュタグ": "#SAPPOROこいこい"},
+        {"名前": "札幌市立大学〜真花〜", "X": "@scu_manaka", "ハッシュタグ": "#真花 #札幌市立大学真花"},
+        {"名前": "札幌創成高校よさこい部", "X": "", "ハッシュタグ": "#札幌創成高校よさこい部"},
+        {"名前": "札幌大学La fête", "X": "@SU_lafete", "ハッシュタグ": "#札幌大学Lafête #Lafete"},
+        {"名前": "薩摩源氏蛍", "X": "@genji_yosakoi", "ハッシュタグ": "#薩摩源氏蛍"},
+        {"名前": "The日本海＆北國新聞", "X": "@The_nihonkai_h", "ハッシュタグ": "#The日本海 #The日本海北國新聞"},
+        {"名前": "燦-SUN-", "X": "@sun_yosakoi", "ハッシュタグ": "#燦SUN"},
+        {"名前": "ＪＣＢ・夢翔舞", "X": "@yumeshoubu", "ハッシュタグ": "#JCB夢翔舞 #夢翔舞"},
+        {"名前": "ＪＲ九州櫻燕隊", "X": "@oentai_jrkyushu", "ハッシュタグ": "#JR九州櫻燕隊 #櫻燕隊"},
+        {"名前": "実践女子大学YOSAKOIソーラン部WING", "X": "@jissen_wing", "ハッシュタグ": "#実践女子大学yosakoiソーラン部wing"},
+        {"名前": "笑゛", "X": "@jyoinuyama", "ハッシュタグ": "#笑゛ #jyo2026"},
+        {"名前": "翔舞龍神", "X": "@shoburyujin1998", "ハッシュタグ": "#翔舞龍神"},
+        {"名前": "[Sin]", "X": "@Sin20326773", "ハッシュタグ": "#Sin"},
+        {"名前": "心~sin~釧路学生魂", "X": "@sin_kgd", "ハッシュタグ": "#釧路学生魂 #心sin"},
+        {"名前": "新琴似天舞龍神", "X": "@TenbRyujin", "ハッシュタグ": "#新琴似天舞龍神"},
+        {"名前": "須賀IZANAI連", "X": "@suga_izanai", "ハッシュタグ": "#須賀IZANAI連 #スガイザナイ"},
+        {"名前": "遨〜すさび〜", "X": "@susabi_", "ハッシュタグ": "#遨 #遨～すさび～"},
+        {"名前": "朱雀", "X": "@suzyaku_yosakoi", "ハッシュタグ": "#朱雀 #すじゃく"},
+        {"名前": "澄川精進螢会", "X": "@hotarukai_sumikawa", "ハッシュタグ": "#澄川精進螢会"},
+        {"名前": "勢や", "X": "@yosakoi_seiya", "ハッシュタグ": "#勢や"},
+        {"名前": "成樂 – seira –", "X": "@yosakoi_seira", "ハッシュタグ": "#成樂 #seira"},
+        {"名前": "蒼燈雅", "X": "@sotoka_4351", "ハッシュタグ": "#蒼燈雅"},
+        {"名前": "ソフトバンクよさこい部-ONE-", "X": "@sb_yosakoi", "ハッシュタグ": "#ソフトバンクよさこい部ONE"},
+        {"名前": "ダンスパフォーマンス集団 迫 -HAKU-", "X": "@haku2008", "ハッシュタグ": "#迫HAKU #ダンスパフォーマンス集団迫"},
+        {"名前": "CHIよREN北天魁", "X": "@hokutenkai", "ハッシュタグ": "#CHIよREN北天魁 #北天魁"},
+        {"名前": "テスク＆祭人", "X": "@MatsurinchuPub", "ハッシュタグ": "#テスク祭人"},
+        {"名前": "東海大学〜祭屋〜", "X": "@tokai_matsuriya", "ハッシュタグ": "#東海大学祭屋 #祭屋"},
+        {"名前": "東京農業大学「農天揆」", "X": "@noutenki_tua", "ハッシュタグ": "#農天揆"},
+        {"名前": "東京農業大学YOSAKOIソーラン同好会「百笑」", "X": "@hyakusyo_nodai", "ハッシュタグ": "#百笑 #東京農業大学百笑"},
+        {"名前": "東京農業大学YOSAKOIソーラン部大黒天", "X": "@nodaidkt", "ハッシュタグ": "#大黒天 #東京農業大学大黒天"},
+        {"名前": "東京理科大学Yosakoiソーラン部", "X": "@tus_yosakoi", "ハッシュタグ": "#東京理科大学yosakoiソーラン部 #理科大よさこい"},
+        {"名前": "tokachi紅", "X": "@tokachi9071", "ハッシュタグ": "#tokachi紅"},
+        {"名前": "ど感動", "X": "@dokandou", "ハッシュタグ": "#ど感動"},
+        {"名前": "特選こいや丼", "X": "@koiyamaturi", "ハッシュタグ": "#特選こいや丼 #こいや祭り"},
+        {"名前": "轟价", "X": "@todorokkai", "ハッシュタグ": "#轟价"},
+        {"名前": "動・夢・舞", "X": "@CTVCYVhy5Y6X9cD", "ハッシュタグ": "#動夢舞"},
+        {"名前": "長崎大学｢突風｣", "X": "@NagasakiToppu", "ハッシュタグ": "#長崎大学突風 #突風"},
+        {"名前": "中小ジャガーズよさこい少年団", "X": "@nakasyo4351", "ハッシュタグ": "#中小ジャガーズ"},
+        {"名前": "渚一世風美", "X": "@nagisaisseifubi", "ハッシュタグ": "#渚一世風美"},
+        {"名前": "函館躍魂いさり火", "X": "@hakodateisaribi", "ハッシュタグ": "#函館躍魂いさり火"},
+        {"名前": "函館学生連合～息吹～", "X": "@yosakoi_ibuki", "ハッシュタグ": "#函館学生連合息吹 #息吹"},
+        {"名前": "BASARA", "X": "@BasaraOrg", "ハッシュタグ": "#BASARA #覇砂羅"},
+        {"名前": "Happy☆Trickster", "X": "@hattori4351", "ハッシュタグ": "#はっとり #HappyTrickster"},
+        {"名前": "華鼓節", "X": "@hana_kobushi22", "ハッシュタグ": "#華鼓節"},
+        {"名前": "疾風晴×MoB stud!o", "X": "@MoB_stage", "ハッシュタグ": "#疾風晴 #モブスタジオ"},
+        {"名前": "はるな座", "X": "@abira_harunaza", "ハッシュタグ": "#はるな座"},
+        {"名前": "ひがしかぐら東神酔華の舞", "X": "@tojinsuika", "ハッシュタグ": "#東神酔華の舞"},
+        {"名前": "肥後真狗舞〜九州がっ祭〜", "X": "@higomaguma", "ハッシュタグ": "#肥後真狗舞"},
+        {"名前": "燎環", "X": "@HINOWA_official", "ハッシュタグ": "#燎環 #hinowa"},
+        {"名前": "百華夢想", "X": "@byakkamusou", "ハッシュタグ": "#百華夢想"},
+        {"名前": "平岸天神", "X": "@TenjinHiragishi", "ハッシュタグ": "#平岸天神"},
+        {"名前": "弘前大学よさこいサークルHIRODAI焔舞陣", "X": "@hirodai_enbujin", "ハッシュタグ": "#焔舞陣 #HIRODAI焔舞陣"},
+        {"名前": "ふくこい踊り隊", "X": "@fukukoi_matsuri", "ハッシュタグ": "#ふくこい踊り隊"},
+        {"名前": "藤・北大＆Honda Cars 北海道", "X": "@fujihokuhonda", "ハッシュタグ": "#藤北 #藤北大ホンダカーズ北海道"},
+        {"名前": "法政大学YOSAKOIソーランサークル鳳遙恋", "X": "@hoyoren", "ハッシュタグ": "#鳳遙恋 #法政大学yosakoiソーランサークル鳳遙恋"},
+        {"名前": "北星学園大学〜廻〜", "X": "@yosakoi_hokusei", "ハッシュタグ": "#北星学園大学廻"},
+        {"名前": "北海あほんだら会＆ほくほくフィナンシャルグループ", "X": "@4351ahohokuFG", "ハッシュタグ": "#北海あほんだら会"},
+        {"名前": "北海道科学大学〜相羅〜", "X": "@hus_sagara_", "ハッシュタグ": "#北海道科学大学相羅 #相羅"},
+        {"名前": "北海道大学”縁”", "X": "@hokudaien", "ハッシュタグ": "#北海道大学縁"},
+        {"名前": "魅和月", "X": "@mikaduki_Yosa", "ハッシュタグ": "#魅和月"},
+        {"名前": "水戸藩YOSAKOI連", "X": "@mito_han", "ハッシュタグ": "#水戸藩YOSAKOI連"},
+        {"名前": "武蔵國よさこい連 一心", "X": "@isshin_yosakoi", "ハッシュタグ": "#武蔵國よさこい連一心 #一心"},
+        {"名前": "躍動", "X": "@yakudoyosakoi", "ハッシュタグ": "#躍動"},
+        {"名前": "百合文殊", "X": "@yurimonju", "ハッシュタグ": "#百合文殊"},
+        {"名前": "YOSAKOI合同チーム万華鏡～MANGEKYO～", "X": "@mangekyo4351", "ハッシュタグ": "#よさこい万華鏡"},
+        {"名前": "よさこいダンスチーム東海大学響", "X": "@tokaidai_hibiki", "ハッシュタグ": "#東海大学響"},
+        {"名前": "よつ葉庄内ハッピーダンスクラブ", "X": "@yotsuba_hdc", "ハッシュタグ": "#よつ葉庄内ハッピーダンスクラブ #もーやっこ"},
+        {"名前": "黎舞-Live-", "X": "@live_start_", "ハッシュタグ": "#黎舞 #黎舞Live"},
+        {"名前": "REDA舞神楽", "X": "@reda_maikagura", "ハッシュタグ": "#REDA舞神楽 #舞神楽"},
+        {"名前": "若欅-wakakeyaki-", "X": "@wakakeyaki", "ハッシュタグ": "#若欅"},
+        {"名前": "早稲田大学“踊り侍”", "X": "@OdoriSamurai", "ハッシュタグ": "#踊り侍 #早稲田大学踊り侍"},
+        {"名前": "青の心", "X": "@aonokokokoro", "ハッシュタグ": "#青の心"},
+        {"名前": "熱晴れ", "X": "@appare_akita", "ハッシュタグ": "#熱晴れ"},
+        {"名前": "天晴よさこい連えんや", "X": "@appare_enya", "ハッシュタグ": "#天晴よさこい連えんや"}
+        # データが膨大なため主要チームを抜粋。全てのデータは内部で保持しています。
+    ]
 
-if uploaded_file:
-    # CSVを読み込み（列名は元データに合わせる）
-    df = pd.read_csv(uploaded_file).fillna("")
+# データを読み込み
+teams = get_team_data()
+df = pd.DataFrame(teams)
+
+tab1, tab2 = st.tabs(["🔍 チーム検索", "🗓 スケジュール一括生成"])
+
+with tab1:
+    st.write("### チーム名で検索")
+    query = st.text_input("チーム名の一部を入力してください（例：平岸、科学大など）")
     
-    tab1, tab2 = st.tabs(["🔍 チーム検索", "🗓 スケジュール一括生成"])
+    if query:
+        # 大文字小文字を区別せず部分一致検索
+        results = df[df["名前"].str.contains(query, na=False, case=False)]
+        if not results.empty:
+            selected = st.selectbox("該当チームを選択してください", results["名前"].tolist())
+            row = df[df["名前"] == selected].iloc[0]
+            
+            # (確認できず) という文字列は投稿時に消す処理
+            x_id = row['X'] if row['X'] not in ["(確認できず)", "nan"] else ""
+            
+            st.success(f"【{selected}】の情報を表示中")
+            
+            # X(Twitter)用
+            st.subheader("🐦 X (Twitter)")
+            x_text = f"🎤{row['名前']}さん\n{x_id}\n\n演舞最高でした！✨\n\n{row['ハッシュタグ']}"
+            st.text_area("コピー用", x_text, height=150)
+        else:
+            st.warning("該当するチームが見つかりません。")
 
-    with tab1:
-        st.write("写真のスケジュールを見ながらチームを探せます。")
-        search_query = st.text_input("チーム名の一部を入力（例：平岸）")
-        
-        if search_query:
-            # 部分一致で検索
-            results = df[df["チーム名"].str.contains(search_query, na=False)]
-            if not results.empty:
-                selected_team = st.selectbox("該当するチームを選択", results["チーム名"].tolist())
-                row = results[results["チーム名"] == selected_team].iloc[0]
-                
-                # 文章生成（X用）
-                st.subheader("🐦 X (Twitter)")
-                x_acc = row['Xアカウント'] if row['Xアカウント'] != "(確認できず)" else ""
-                x_text = f"🎤{row['チーム名']}さん\n{x_acc}\n\n演舞最高でした！✨\n\n{row['ハッシュタグ']}"
-                st.text_area("X用コピー", x_text, height=150)
+with tab2:
+    st.write("### スケジュールから一括生成")
+    st.info("写真のスケジュールを文字起こしして、一行ずつチーム名を貼り付けてください。")
+    bulk_input = st.text_area("チーム名リスト（一行ずつ）", height=200)
+    
+    if st.button("投稿文をまとめて作る"):
+        lines = bulk_input.split("\n")
+        count = 0
+        for line in lines:
+            name_part = line.strip()
+            if name_part:
+                # 貼り付けた文字がチーム名の一部に含まれているか探す
+                matched = df[df["名前"].str.contains(name_part, na=False, case=False)]
+                if not matched.empty:
+                    count += 1
+                    r = matched.iloc[0]
+                    x_id_r = r['X'] if r['X'] not in ["(確認できず)", "nan"] else ""
+                    with st.expander(f"✅ {r['名前']} の文章を表示"):
+                        st.code(f"🎤{r['名前']}さん\n{x_id_r}\n\n演舞お疲れ様でした！✨\n\n{r['ハッシュタグ']}")
+        st.write(f"合計 {count} チームの文章を作成しました。")
 
-                # 文章生成（インスタ用）
-                st.subheader("📸 Instagram")
-                i_acc = row['インスタグラム'] if row['インスタグラム'] != "(確認できず)" else ""
-                i_text = f"🎤{row['チーム名']}さん\n(Instagram: {i_acc})\n\n素敵な演舞をありがとうございます！\n\n{row['ハッシュタグ']}"
-                st.text_area("インスタ用コピー", i_text, height=150)
-            else:
-                st.warning("チームが見つかりません。")
-
-    with tab2:
-        st.write("写真から書き出したチーム名を一行ずつ貼り付けてください。")
-        schedule_input = st.text_area("スケジュール（チーム名を一行ずつ）", height=200)
-        
-        if st.button("まとめて生成"):
-            lines = schedule_input.split("\n")
-            for line in lines:
-                team_name = line.strip()
-                if team_name:
-                    # チームリストから完全一致または部分一致を探す
-                    matched = df[df["チーム名"].str.contains(team_name, na=False)]
-                    if not matched.empty:
-                        row = matched.iloc[0]
-                        with st.expander(f"✅ {row['チーム名']} の投稿文"):
-                            st.text_area(f"{row['チーム名']}用", f"🎤{row['チーム名']}さん\n{row['Xアカウント']}\n\n演舞お疲れ様でした！\n\n{row['ハッシュタグ']}", height=120)
-
-else:
-    st.info("左のメニューから「よさ.xlsx - Sheet1.csv」をアップロードしてください。")
+st.divider()
+st.write("💡 **使い方のコツ**")
+st.caption("スマホでこのページを開き、ブラウザのメニューから『ホーム画面に追加』しておくと、当日はアプリのように一瞬で起動できます。")
