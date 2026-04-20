@@ -4,188 +4,135 @@ import pandas as pd
 st.set_page_config(page_title="YOSAKOI現地投稿くん", layout="centered")
 
 st.title("🎤 YOSAKOI現地投稿くん")
-st.caption("全202チーム完全収録 / 編集・SNS出し分け対応版")
+st.caption("スプレッドシート連動・全自動更新版")
 
-# --- 全202チームのデータを内蔵 (提供されたCSVから完全抽出) ---
-@st.cache_data
-def get_team_data():
-    return [
-        {"名前": "RHKさっぽろ", "かな": "あーるえいちけーさっぽろ", "X": "", "インスタ": "", "タグ": "#RHKさっぽろ"},
-        {"名前": "藍&MOEホールディングス", "かな": "あいあんどもえほーるでぃんぐす", "X": "@ai_kyoikudai", "インスタ": "@ai.yosakoi", "タグ": "#藍MOEホールディングス"},
-        {"名前": "愛斜童びしゃせん", "かな": "あいしゃどうびしゃせん", "X": "", "インスタ": "@bi_sha_sen_yosakoisoran", "タグ": "#愛斜童びしゃせん"},
-        {"名前": "AOMORI花嵐桜組", "かな": "あおもりはなあらしさくらぐみ", "X": "@AOMORI43165400", "インスタ": "@aomori_hana", "タグ": "#花嵐桜組 #AOMORI花嵐桜組"},
-        {"名前": "朝霞なるこ遊和会", "かな": "あさかなるこゆうわかい", "X": "@asaka_yuwakai", "インスタ": "@asaka_yuwakai", "タグ": "#朝霞なるこ遊和会 #遊和会"},
-        {"名前": "旭川華酔組", "かな": "あさひかわかすいぐみ", "X": "@kasuigumi", "インスタ": "@kasuigumi", "タグ": "#旭川華酔組 #華酔組"},
-        {"名前": "旭川華舞輝会", "かな": "あさひかわかぶきかい", "X": "@1996kabuki", "インスタ": "@yosakoi_asahikawakabukikai", "タグ": "#旭川華舞輝会"},
-        {"名前": "あしたもハレヤ！", "かな": "あしたもはれや", "X": "@hareya_sapporo", "インスタ": "@hareya_sapporo", "タグ": "#あしたもハレヤ"},
-        {"名前": "遖", "かな": "あっぱれ", "X": "@yosakoi_appare", "インスタ": "@yosakoi_appare", "タグ": "#遖 #あっぱれ"},
-        {"名前": "天嵩～Amata～", "かな": "あまた", "X": "@amata_yosakoi", "インスタ": "@amatayosakoi", "タグ": "#天嵩〜Amata〜 #天嵩 #amata"},
-        {"名前": "Alive", "かな": "あらいぶ", "X": "@alive_yosakoi", "インスタ": "@alive.yosakoi", "タグ": "#よさこいAlive"},
-        {"名前": "粋〜IKI〜 北海学園大学", "かな": "いきほっかいがくえんだいがく", "X": "@iki_hgu", "インスタ": "@iki_hgu", "タグ": "#粋iki北海学園大学 #粋北海学園大学"},
-        {"名前": "石狩朱華弁天", "かな": "いしかりしゅかべんてん", "X": "", "インスタ": "", "タグ": "#石狩朱華弁天 #朱華弁天"},
-        {"名前": "石狩流星海", "かな": "いしかりりゅうせいかい", "X": "@ryuseikai0707", "インスタ": "@ryuseikai_0707", "タグ": "#石狩流星海"},
-        {"名前": "市立船橋高校吹奏楽部THEヨサコイ", "かな": "いちふな", "X": "@127wo", "インスタ": "@ichifuna.w.o.c", "タグ": "#市立船橋高校吹奏楽部THEヨサコイ #市船吹奏楽部"},
-        {"名前": "いづる-Izul-", "かな": "いづる", "X": "@izul_fes", "インスタ": "", "タグ": "#いづる #Izul"},
-        {"名前": "いなせ系暁会活頗組", "かな": "いなせけいあかつきかいかっぱぐみ", "X": "@kappagumi", "インスタ": "@kappa4351", "タグ": "#いなせ系暁会活頗組 #活頗組 #かっぱ組"},
-        {"名前": "羽州ぼろ鳶組", "かな": "うしゅうぼろとびぐみ", "X": "@borotobi400", "インスタ": "", "タグ": "#羽州ぼろ鳶組"},
-        {"名前": "うふふ", "かな": "うふふ", "X": "", "インスタ": "@ufufu.sagamihara", "タグ": "#うふふ #うふふよさこい"},
-        {"名前": "海響&H・O・C-Group", "かな": "うみなり", "X": "@uminariofficial", "インスタ": "@uminari_official", "タグ": "#海響"},
-        {"名前": "Ace", "かな": "えーす", "X": "@AceYosakoi", "インスタ": "", "タグ": "#Ace"},
-        {"名前": "exciting蔵・平岸", "かな": "えきさいてぃんぐくらひらぎし", "X": "", "インスタ": "", "タグ": "#exciting蔵平岸"},
-        {"名前": "Excla!matioN", "かな": "えくらめーしょん", "X": "@Excla_matioN", "インスタ": "@excla_obihiro", "タグ": "#エクラ #exclamation"},
-        {"名前": "AJG KIDS", "かな": "えーじぇーじーきっず", "X": "", "インスタ": "", "タグ": "#AJGKIDS"},
-        {"名前": "蝦夷YOSAKOI連「倭屋」", "かな": "えぞよさこいれんわや", "X": "@waya_okhotsk", "インスタ": "@waya_okhotsk", "タグ": "#倭屋 #わやややや"},
-        {"名前": "恵庭紅鴉", "かな": "えにわべにがらす", "X": "@benigarasu1999", "インスタ": "@eniwabenigarasu", "タグ": "#恵庭紅鴉"},
-        {"名前": "江別まっことえぇ＆北海道情報大学", "かな": "えべつまっことえぇ", "X": "@ebetsumakkotoee", "インスタ": "@ebetsumakkotoee", "タグ": "#江別まっことえぇ"},
-        {"名前": "桜閃（おうせん）", "かな": "おうせん", "X": "@Hokkaido_Authen", "インスタ": "@hokkaido_authen", "タグ": "#桜閃"},
-        {"名前": "小樽商科大学”翔楽舞”", "かな": "おたるしょうかだいがくしょうがくぶ", "X": "@syogakubu", "インスタ": "@syogakubu", "タグ": "#翔楽舞 #小樽商科大学翔楽舞"},
-        {"名前": "踊り屋１Zｅｎ＇ｓ", "かな": "おどりやいちぜんず", "X": "@1zen_s_tokyo", "インスタ": "@1zens_odoriya", "タグ": "#踊り屋1Zens #1zens"},
-        {"名前": "踊るBAKA!TOKYO", "かな": "おどるばかとうきょう", "X": "@BAKATOKYO1", "インスタ": "@odorubaka_tokyo", "タグ": "#踊るbakatokyo #オドバカ"},
-        {"名前": "oh！愛で隊", "かな": "おめでたい", "X": "@Oh86888430", "インスタ": "@oh_medetai", "タグ": "#oh愛で隊 #おめでたい"},
-        {"名前": "Gush neo", "かな": "がっしゅねお", "X": "@gush_since1998", "インスタ": "@gushneo", "タグ": "#Gushneo #ガッシュネオ"},
-        {"名前": "勝山組", "かな": "かつやまぐみ", "X": "@katsuyamagumi", "インスタ": "@katsuyamagumi", "タグ": "#勝山組"},
-        {"名前": "夏舞徒", "かな": "かぶと", "X": "@kabutoyosakoi", "インスタ": "@yosakoi_kabuto", "タグ": "#夏舞徒"},
-        {"名前": "嘉們-KAMON-", "かな": "かもん", "X": "@kamon0503", "インスタ": "@kamon20130503", "タグ": "#嘉們 #KAMON"},
-        {"名前": "GARAN43/35°", "かな": "がらん", "X": "@GARAN4335", "インスタ": "@garan4335", "タグ": "#GARAN4335"},
-        {"名前": "我流", "かな": "がりゅう", "X": "@garyu_yosakoi", "インスタ": "@garyu_yosa", "タグ": "#我流"},
-        {"名前": "和凛ーKARINー", "かな": "かりん", "X": "@karin15184351", "インスタ": "@karin.yosakoi_soran", "タグ": "#和凛 #和凛ーKARINー"},
-        {"名前": "関東学院大学”誇咲”", "かな": "かんとうがくいんだいがくほこさき", "X": "@_Hokosaki_", "インスタ": "@_hokosaki_", "タグ": "#誇咲 #関東学院大学誇咲"},
-        {"名前": "～旗士道～", "かな": "きしどう", "X": "@kishidoh", "インスタ": "@kishi.dou", "タグ": "#旗士道"},
-        {"名前": "旗翆-KISUI-", "かな": "きすい", "X": "@KISUI_FlagTeam", "インスタ": "@kisui_flag_entertainment_unit", "タグ": "#旗翆 #KISUI"},
-        {"名前": "北鼓童＆名寄市立大学", "かな": "きたこどうなよりしりつだいがく", "X": "@kitakonayoro", "インスタ": "@kitakonayoro", "タグ": "#北鼓童"},
-        {"名前": "北里三陸湧昇龍", "かな": "きたざとさんりくゆうしょうりゅう", "X": "@yusyoryu", "インスタ": "@yusyo_ryu", "タグ": "#北里三陸湧昇龍 #湧昇龍"},
-        {"名前": "北昴", "かな": "きたすばる", "X": "@kita_subaru", "インスタ": "@kitasubaru", "タグ": "#北昴"},
-        {"名前": "斬桐舞", "かな": "きりきりまい", "X": "@kiri_kiri_mai", "インスタ": "@kirikirimaaai", "タグ": "#斬桐舞"},
-        {"名前": "グラフィックホールディングスpresents倭奏", "かな": "わっか", "X": "@Wakka_info", "インスタ": "@wakka.info", "タグ": "#倭奏 #わっか"},
-        {"名前": "K-one動流夢", "かな": "けーわんどりーむ", "X": "@yoiyosakoi", "インスタ": "@yoiyosakoi", "タグ": "#kone動流夢"},
-        {"名前": "劇団果実籠", "かな": "げきだんふるーつばすけっと", "X": "@FruitBasket2011", "インスタ": "@gekidan.fruitbasket", "タグ": "#劇団果実籠"},
-        {"名前": "公立千歳科学技術大学「光一天」", "かな": "こういってん", "X": "@KouittenYosakoi", "インスタ": "@kouittenyosakoi", "タグ": "#光一天"},
-        {"名前": "コカ·コーラ札幌国際大学", "かな": "こかこーらさっぽろこくさいだいがく", "X": "@Coca_SIU", "インスタ": "@siu_yosakoi", "タグ": "#札幌国際大学"},
-        {"名前": "心躍れば皆同じ", "かな": "ここみな", "X": "@kokmina2024", "インスタ": "@odoru556", "タグ": "#心躍れば皆同じ #ここみな"},
-        {"名前": "志〜こころざし〜", "かな": "こころざし", "X": "@kokorozashi1130", "インスタ": "@yosakoisorankokorozashi", "タグ": "#志こころざし"},
-        {"名前": "コンサフリーク～北海道武蔵女子学園～", "かな": "こんさふりーく", "X": "@ConsaFreak", "インスタ": "@consafreak", "タグ": "#コンサフリーク"},
-        {"名前": "SA:GA-彩雅-", "かな": "さがさいが", "X": "@SA_GA4351", "インスタ": "@saga.yosakoi", "タグ": "#SAGA彩雅 #彩雅"},
-        {"名前": "さぁさ みんなで どっこいしょ", "かな": "さぁさみんなでどっこいしょ", "X": "@dokkoisho365", "インスタ": "", "タグ": "#さぁさみんなでどっこいしょ"},
-        {"名前": "紫仁", "かな": "さいじん", "X": "@SaizinYosakoi", "インスタ": "", "タグ": "#紫仁"},
-        {"名前": "相模祭組＆加舞輪奴会", "かな": "さがみまつりぐみとかまわぬかい", "X": "@kamawanukai", "インスタ": "@kamawanukai", "タグ": "#相模祭組 #加舞輪奴会"},
-        {"名前": "札幌学院大学・文京台", "かな": "さっぽろがくいんだいがくぶんきょうだい", "X": "@sgu_yosakoi", "インスタ": "@sgu__yosakoi", "タグ": "#札幌学院大学文京台"},
-        {"名前": "SAPPOROこいこい", "かな": "さっぽろこいこい", "X": "@SAPPOROKOIKOI", "インスタ": "@sapporo.koikoi", "タグ": "#SAPPOROこいこい"},
-        {"名前": "札幌市立大学〜真花〜", "かな": "さっぽろしりつだいがくまなか", "X": "@scu_manaka", "インスタ": "@scu_manaka", "タグ": "#真花 #札幌市立大学真花"},
-        {"名前": "札幌創成高校よさこい部", "かな": "さっぽろそうせいこうこう", "X": "", "インスタ": "@sosei_yosakoi", "タグ": "#札幌創成高校よさこい部"},
-        {"名前": "札幌大学La fête", "かな": "さっぽろだいがくらふぇっと", "X": "@SU_lafete", "インスタ": "@su_lafete", "タグ": "#札幌大学Lafête #Lafete"},
-        {"名前": "薩摩源氏蛍", "かな": "さつまげんじぼたる", "X": "@genji_yosakoi", "インスタ": "@genjibotaru4351", "タグ": "#薩摩源氏蛍"},
-        {"名前": "The日本海＆北國新聞", "かな": "ざにほんかいあんどほっこくしんぶん", "X": "@The_nihonkai_h", "インスタ": "@the.nihonkai.hokkokushinbun", "タグ": "#The日本海"},
-        {"名前": "燦-SUN-", "かな": "さん", "X": "@sun_yosakoi", "インスタ": "@sun.yosakoi", "タグ": "#燦SUN"},
-        {"名前": "ＪＣＢ・夢翔舞", "かな": "じぇーしーびーゆめしょうぶ", "X": "@yumeshoubu", "インスタ": "@yumeshoubu", "タグ": "#JCB夢翔舞 #夢翔舞"},
-        {"名前": "ＪＲ九州櫻燕隊", "かな": "じぇーあーるきゅうしゅうおうえんたい", "X": "@oentai_jrkyushu", "インスタ": "", "タグ": "#JR九州櫻燕隊 #櫻燕隊"},
-        {"名前": "実践女子大学YOSAKOIソーラン部WING", "かな": "じっせんじょしだいがくういんぐ", "X": "@jissen_wing", "インスタ": "@jissen.wing", "タグ": "#実践女子大学yosakoiソーラン部wing"},
-        {"名前": "笑゛", "かな": "じょう", "X": "@jyoinuyama", "インスタ": "@inuyama_jyo", "タグ": "#笑゛ #jyo2026"},
-        {"名前": "翔舞龍神", "かな": "しょうぶりゅうじん", "X": "@shoburyujin1998", "インスタ": "", "タグ": "#翔舞龍神"},
-        {"名前": "[Sin]", "かな": "しん", "X": "@Sin20326773", "インスタ": "@sin_buddy_", "タグ": "#Sin"},
-        {"名前": "心~sin~釧路学生魂", "かな": "しんくしろがくせいだましい", "X": "@sin_kgd", "インスタ": "@sin_kgd.official", "タグ": "#釧路学生魂 #心sin"},
-        {"名前": "新琴似天舞龍神", "かな": "しんことにてんぶりゅうじん", "X": "@TenbRyujin", "インスタ": "@tenburyujin_shinkotoni", "タグ": "#新琴似天舞龍神"},
-        {"名前": "須賀IZANAI連", "かな": "すがいざないれん", "X": "@suga_izanai", "インスタ": "@suga_izanai", "タグ": "#須賀IZANAI連 #スガイザナイ"},
-        {"名前": "遨〜すさび〜", "かな": "すさび", "X": "@susabi_", "インスタ": "@susabi_naruko06", "タグ": "#遨 #遨～すさび～"},
-        {"名前": "朱雀", "かな": "すじゃく", "X": "@suzyaku_yosakoi", "インスタ": "@suzyaku_yosakoisoran_", "タグ": "#朱雀 #すじゃく"},
-        {"名前": "澄川精進螢会", "かな": "すみかわしょうじんほたるかい", "X": "", "インスタ": "@hotarukai_sumikawa", "タグ": "#澄川精進螢会"},
-        {"名前": "勢や", "かな": "せいや", "X": "@yosakoi_seiya", "インスタ": "@seiya4351_official", "タグ": "#勢や"},
-        {"名前": "成樂 – seira –", "かな": "せいら", "X": "@yosakoi_seira", "インスタ": "@yosakoi_seira", "タグ": "#成樂 #seira"},
-        {"名前": "蒼燈雅", "かな": "そうとうか", "X": "@sotoka_4351", "インスタ": "@so_to_ka.4351", "タグ": "#蒼燈雅"},
-        {"名前": "ソフトバンクよさこい部-ONE-", "かな": "そふとばんくよさこいぶわん", "X": "@sb_yosakoi", "インスタ": "@softbank_yosakoi", "タグ": "#ソフトバンクよさこい部ONE"},
-        {"名前": "ダンスパフォーマンス集団 迫 -HAKU-", "かな": "はく", "X": "@haku2008", "インスタ": "", "タグ": "#迫HAKU"},
-        {"名前": "CHIよREN北天魁", "かな": "ちよれんほくてんかい", "X": "@hokutenkai", "インスタ": "@hokutenkai", "タグ": "#CHIよREN北天魁 #北天魁"},
-        {"名前": "テスク＆祭人", "かな": "てすくあんどまつりんちゅ", "X": "@MatsurinchuPub", "インスタ": "@tsc_matsurinchu", "タグ": "#テスク祭人"},
-        {"名前": "東海大学〜祭屋〜", "かな": "とうかいだいがくまつりや", "X": "@tokai_matsuriya", "インスタ": "@tokaimatsuriya", "タグ": "#東海大学祭屋 #祭屋"},
-        {"名前": "東京農業大学「農天揆」", "かな": "とうきょうのうぎょうだいがくのうてんき", "X": "@noutenki_tua", "インスタ": "@noutenki_yosakoisoran", "タグ": "#農天揆"},
-        {"名前": "東京農業大学YOSAKOIソーラン同好会「百笑」", "かな": "とうきょうのうぎょうだいがくひゃくしょう", "X": "@hyakusyo_nodai", "インスタ": "@hyakusho_yosa", "タグ": "#百笑 #東京農業大学百笑"},
-        {"名前": "東京農業大学YOSAKOIソーラン部大黒天", "かな": "とうきょうのうぎょうだいがくだいこくてん", "X": "@nodaidkt", "インスタ": "@nodai_dkt", "タグ": "#大黒天 #東京農業大学大黒天"},
-        {"名前": "東京理科大学Yosakoiソーラン部", "かな": "とうきょうりかだいがくよさこいぶ", "X": "@tus_yosakoi", "インスタ": "@tusyosakoimedia", "タグ": "#東京理科大学yosakoiソーラン部"},
-        {"名前": "tokachi紅", "かな": "とかちくれない", "X": "@tokachi9071", "インスタ": "@tokachi9071", "タグ": "#tokachi紅"},
-        {"名前": "ど感動", "かな": "どかんどう", "X": "@dokandou", "インスタ": "@dokandou", "タグ": "#ど感動"},
-        {"名前": "特選こいや丼", "かな": "こいやどん", "X": "@koiyamaturi", "インスタ": "@koiyamaturi", "タグ": "#特選こいや丼"},
-        {"名前": "轟价", "かな": "とどろっかい", "X": "@todorokkai", "インスタ": "@todorokkai", "タグ": "#轟价"},
-        {"名前": "動・夢・舞", "かな": "どんまい", "X": "@CTVCYVhy5Y6X9cD", "インスタ": "@donmai1997", "タグ": "#動夢舞"},
-        {"名前": "長崎大学｢突風｣", "かな": "ながさきだいがくとっぷう", "X": "@NagasakiToppu", "インスタ": "@toppu.yosakoi", "タグ": "#長崎大学突風 #突風"},
-        {"名前": "中小ジャガーズよさこい少年団", "かな": "なかしょうじゃがーず", "X": "@nakasyo4351", "インスタ": "", "タグ": "#中小ジャガーズ"},
-        {"名前": "渚一世風美", "かな": "なぎさいっせいふうび", "X": "@nagisaisseifubi", "インスタ": "@nagisa_1sfb", "タグ": "#渚一世風美"},
-        {"名前": "函館躍魂いさり火", "かな": "はこだてやくこんいさりび", "X": "@hakodateisaribi", "インスタ": "@yosakoi.isaribi", "タグ": "#函館躍魂いさり火"},
-        {"名前": "函館学生連合～息吹～", "かな": "はこだてがくせいれんごういぶき", "X": "@yosakoi_ibuki", "インスタ": "@hakodate_ibuki", "タグ": "#函館学生連合息吹 #息吹"},
-        {"名前": "BASARA", "かな": "ばさら", "X": "@BasaraOrg", "インスタ": "@basaraorg", "タグ": "#BASARA #覇砂羅"},
-        {"名前": "Happy☆Trickster", "かな": "はっとり", "X": "@hattori4351", "インスタ": "@hattori4351", "タグ": "#はっとり #HappyTrickster"},
-        {"名前": "華鼓節", "かな": "はなこぶし", "X": "@hana_kobushi22", "インスタ": "@hanakobushi2022", "タグ": "#華鼓節"},
-        {"名前": "疾風晴×MoB stud!o", "かな": "しっぷうはれあんどもぶすたじお", "X": "@MoB_stage", "インスタ": "@mob_studio_sapporo", "タグ": "#疾風晴 #モブスタジオ"},
-        {"名前": "はるな座", "かな": "はるなざ", "X": "@abira_harunaza", "インスタ": "@yosakoi.harunaza", "タグ": "#はるな座"},
-        {"名前": "ひがしかぐら東神酔華の舞", "かな": "とうじんすいかのまい", "X": "@tojinsuika", "インスタ": "@tojinsuika", "タグ": "#東神酔華の舞"},
-        {"名前": "肥後真狗舞〜九州がっ祭〜", "かな": "ひごまぐま", "X": "@higomaguma", "インスタ": "@higomagma_official", "タグ": "#肥後真狗舞"},
-        {"名前": "燎環", "かな": "ひのわ", "X": "@HINOWA_official", "インスタ": "@hinowa4351official", "タグ": "#燎環 #hinowa"},
-        {"名前": "百華夢想", "かな": "ひゃっかむそう", "X": "@byakkamusou", "インスタ": "@byakkamusou", "タグ": "#百華夢想"},
-        {"名前": "平岸天神", "かな": "ひらぎしてんじん", "X": "@TenjinHiragishi", "インスタ": "@hiragishi_tenjin", "タグ": "#平岸天神"},
-        {"名前": "弘前大学よさこいサークルHIRODAI焔舞陣", "かな": "えんぶじん", "X": "@hirodai_enbujin", "インスタ": "@hirodai_enbujin.official", "タグ": "#焔舞陣 #HIRODAI焔舞陣"},
-        {"名前": "ふくこい踊り隊", "かな": "ふくこいおどりたい", "X": "@fukukoi_matsuri", "インスタ": "@fukukoi.odoritai", "タグ": "#ふくこい踊り隊"},
-        {"名前": "藤・北大＆Honda Cars 北海道", "かな": "ふじほく", "X": "@fujihokuhonda", "インスタ": "@fujihoku_honda", "タグ": "#藤北 #藤北大ホンダカーズ北海道"},
-        {"名前": "法政大学YOSAKOIソーランサークル鳳遙恋", "かな": "ほうようれん", "X": "@hoyoren", "インスタ": "@hoyoren_", "タグ": "#鳳遙恋 #法政大学yosakoiソーランサークル鳳遙恋"},
-        {"名前": "北星学園大学〜廻〜", "かな": "ほくせいがくいんだいがくめぐり", "X": "@yosakoi_hokusei", "インスタ": "@yosakoi_hokusei", "タグ": "#北星学園大学廻"},
-        {"名前": "北海あほんだら会＆ほくほくフィナンシャルグループ", "かな": "ほっかいあほんだらかい", "X": "@4351ahohokuFG", "インスタ": "@ahondarahokuhoku", "タグ": "#北海あほんだら会"},
-        {"名前": "北海道科学大学〜相羅〜", "かな": "ほっかいどうかがくだいがくさがら", "X": "@hus_sagara_", "インスタ": "@yosakoisagara.official", "タグ": "#北海道科学大学相羅 #相羅"},
-        {"名前": "北海道大学”縁”", "かな": "ほっかいどうだいがくえん", "X": "@hokudaien", "インスタ": "@hokudaien.official", "タグ": "#北海道大学縁"},
-        {"名前": "魅和月", "かな": "みかづき", "X": "@mikaduki_Yosa", "インスタ": "@mikaduki_yosakoi", "タグ": "#魅和月"},
-        {"名前": "水戸藩YOSAKOI連", "かな": "みとはんよさこいれん", "X": "@mito_han", "インスタ": "@mito_han", "タグ": "#水戸藩YOSAKOI連"},
-        {"名前": "武蔵國よさこい連 一心", "かな": "むさしのくによさこいれんいっしん", "X": "@isshin_yosakoi", "インスタ": "@isshin.yosakoi", "タグ": "#武蔵國よさこい連一心 #一心"},
-        {"名前": "躍動", "かな": "やくどう", "X": "@yakudoyosakoi", "インスタ": "@yosakoi.yakudo", "タグ": "#躍動"},
-        {"名前": "百合文殊", "かな": "ゆりもんじゅ", "X": "@yurimonju", "インスタ": "@yurimonju", "タグ": "#百合文殊"},
-        {"名前": "YOSAKOI合同チーム万華鏡～MANGEKYO～", "かな": "まんげきょう", "X": "@mangekyo4351", "インスタ": "@mangekyo4351", "タグ": "#よさこい万華鏡"},
-        {"名前": "よさこいダンスチーム東海大学響", "かな": "とうかいだいがくひびき", "X": "@tokaidai_hibiki", "インスタ": "@tokaidai_hibiki", "タグ": "#東海大学響"},
-        {"名前": "よつ葉庄内ハッピーダンスクラブ", "かな": "よつばしょうないはっぴーだんすくらぶ", "X": "@yotsuba_hdc", "インスタ": "@yotsuba_hdc", "タグ": "#よつ葉庄内ハッピーダンスクラブ #もーやっこ"},
-        {"名前": "黎舞-Live-", "かな": "らいぶ", "X": "@live_start_", "インスタ": "@live_yosakoi_", "タグ": "#黎舞 #黎舞Live"},
-        {"名前": "REDA舞神楽", "かな": "れだまいかぐら", "X": "@reda_maikagura", "インスタ": "@reda.maikagram", "タグ": "#REDA舞神楽 #舞神楽"},
-        {"名前": "若欅-wakakeyaki-", "かな": "わかけやき", "X": "@wakakeyaki", "インスタ": "@asaka_wakakeyaki", "タグ": "#若欅"},
-        {"名前": "早稲田大学“踊り侍”", "かな": "わせだだいがくおどりざむらい", "X": "@OdoriSamurai", "インスタ": "@odorisamurai", "タグ": "#踊り侍 #早稲田大学踊り侍"},
-        {"名前": "青の心", "かな": "あおのこころ", "X": "@aonokokokoro", "インスタ": "@yeeeeaeeeeeeah", "タグ": "#青の心"},
-        {"名前": "熱晴れ", "かな": "あっぱれあきた", "X": "@appare_akita", "インスタ": "@appare_akita", "タグ": "#熱晴れ"},
-        {"名前": "天晴よさこい連えんや", "かな": "あっぱれよさこいれんえんや", "X": "@appare_enya", "インスタ": "@appare_enya", "タグ": "#天晴よさこい連えんや"},
-        {"名前": "AMTRS", "かな": "あまとらす", "X": "", "インスタ": "@idol_17_project", "タグ": "#AMTRS #アマトラス"},
-        {"名前": "騰嵐〜arashi〜", "かな": "あらし", "X": "@arashi_yosakoi", "インスタ": "@yosakoi_arashi_official", "タグ": "#騰嵐"},
-        {"名前": "一祭万笑", "かな": "いっさいばんしょう", "X": "@1saibansyou", "インスタ": "@1sai.bansyou", "タグ": "#一祭万笑"},
-        {"名前": "おたるYOSAKOIソーランjr.澪-mio-", "かな": "おたるみお", "X": "", "インスタ": "@miomio2025_", "タグ": "#澪"},
-        {"名前": "音ら韻", "かな": "おんらいん", "X": "@online_yosakoi", "インスタ": "@online_yosakoi", "タグ": "#音ら韻"},
-    ]
+# ==========================================
+# 1. スプレッドシートのURL設定
+# ==========================================
+# 先ほど取得いただいたURLです！
+SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR4oPDAGy6lDROLhiBEhDKLNEI-b82ghaBNr3yli5uVZbizgZmSo2Gidv0HjuZbWXnX5-yo0TJMmM99/pub?gid=0&single=true&output=csv"
 
-teams = get_team_data()
-df = pd.DataFrame(teams)
-
-st.write("### 🔍 チーム名・ふりがなで検索")
-query = st.text_input("例：ひらぎし、科学大、そうせい など")
-
-if query:
-    # チーム名またはふりがなで検索
-    results = df[df["名前"].str.contains(query, na=False, case=False) | df["かな"].str.contains(query, na=False, case=False)]
-    
-    if not results.empty:
-        selected = st.selectbox("該当チームを選択してください", results["名前"].tolist())
-        row = df[df["名前"] == selected].iloc[0]
+# ==========================================
+# 2. データの読み込み（60秒ごとに最新情報をチェック）
+# ==========================================
+@st.cache_data(ttl=60)
+def load_data():
+    try:
+        # スプレッドシートから直接読み込み
+        df = pd.read_csv(SHEET_URL)
+        df = df.fillna("") # 空欄をエラーにならないよう処理
         
-        # 投稿文の生成（編集可能に）
-        st.divider()
-        st.success(f"【{selected}】の情報を表示中")
+        # エクセルそのままの列名（チーム名など）で貼られていても動くように自動変換
+        rename_dict = {
+            "チーム名": "名前",
+            "ふりがな": "かな",
+            "Xアカウント": "X",
+            "インスタグラム": "インスタ",
+            "ハッシュタグ": "タグ"
+        }
+        df = df.rename(columns=rename_dict)
+        return df
+    except Exception as e:
+        st.error("データの読み込みに失敗しました。URLが間違っていないか確認してください。")
+        return pd.DataFrame()
+
+# データの取得
+df = load_data()
+
+# テンプレートの初期設定
+if "template_x" not in st.session_state:
+    st.session_state.template_x = "🎤{名前}さん\n{X}\n\n演舞最高でした！✨\n\n{タグ}"
+
+if "template_insta" not in st.session_state:
+    st.session_state.template_insta = "🎤{名前}さん\n(Instagram: {インスタ})\n\n素敵な演舞をありがとうございます！✨\n.\n.\n{タグ}"
+
+# ==========================================
+# 3. テンプレート設定エリア
+# ==========================================
+with st.expander("⚙️ 投稿テンプレートの設定（イベントごとに変更可能）"):
+    st.write("以下の文章を書き換えると、すべての生成結果に反映されます。")
+    st.session_state.template_x = st.text_area("X (Twitter) 用テンプレート", st.session_state.template_x, height=130)
+    st.session_state.template_insta = st.text_area("Instagram 用テンプレート", st.session_state.template_insta, height=150)
+
+# ==========================================
+# 4. メイン機能（データが読み込めた場合のみ表示）
+# ==========================================
+if not df.empty:
+    tab1, tab2 = st.tabs(["🔍 1件ずつ検索", "🗓 スケジュール一括生成＆出力"])
+
+    with tab1:
+        st.write("### チーム名・ふりがなで検索")
+        query = st.text_input("例：ひらぎし、科学大、そうせい など")
         
-        # X / Instagramの切り替えタブ
-        tab_x, tab_insta = st.tabs(["🐦 X (Twitter)", "📸 Instagram"])
-        
-        with tab_x:
-            x_id = row['X'] if row['X'] not in ["(確認できず)", "nan", ""] else ""
-            default_x = f"🎤{row['名前']}さん\n{x_id}\n\n演舞最高でした！✨\n\n{row['タグ']}"
-            # 編集エリア
-            edited_x = st.text_area("X用文章を編集（編集後にコピーしてください）", default_x, height=200, key="x_edit")
-            st.info("上のテキストエリアを全選択してコピーしてください。")
+        if query:
+            # 検索処理
+            results = df[df["名前"].str.contains(query, na=False, case=False) | df["かな"].str.contains(query, na=False, case=False)]
             
-        with tab_insta:
-            insta_id = row['インスタ'] if row['インスタ'] not in ["(確認できず)", "nan", ""] else ""
-            default_insta = f"🎤{row['名前']}さん\n(Instagram: {insta_id})\n\n素敵な演舞をありがとうございます！✨\n.\n.\n{row['タグ']}"
-            # 編集エリア
-            edited_insta = st.text_area("Instagram用文章を編集（編集後にコピーしてください）", default_insta, height=200, key="insta_edit")
-            st.info("上のテキストエリアを全選択してコピーしてください。")
-    else:
-        st.warning("該当するチームが見つかりません。")
+            if not results.empty:
+                selected = st.selectbox("該当チームを選択してください", results["名前"].tolist())
+                row = df[df["名前"] == selected].iloc[0]
+                
+                # テンプレートに流し込むデータの準備
+                x_id = row['X'] if row['X'] not in ["(確認できず)", "nan", ""] else ""
+                insta_id = row['インスタ'] if row['インスタ'] not in ["(確認できず)", "nan", ""] else ""
+                
+                text_x = st.session_state.template_x.format(名前=row['名前'], X=x_id, インスタ=insta_id, タグ=row['タグ'])
+                text_insta = st.session_state.template_insta.format(名前=row['名前'], X=x_id, インスタ=insta_id, タグ=row['タグ'])
+                
+                st.divider()
+                st.success(f"【{selected}】の情報を表示中")
+                
+                tab_x, tab_insta = st.tabs(["🐦 X (Twitter)", "📸 Instagram"])
+                with tab_x:
+                    st.text_area("X用文章（微調整できます）", text_x, height=200, key=f"x_edit_{row['名前']}")
+                with tab_insta:
+                    st.text_area("Instagram用文章（微調整できます）", text_insta, height=200, key=f"insta_edit_{row['名前']}")
+            else:
+                st.warning("該当するチームが見つかりません。スプレッドシートに追加してください。")
 
-st.divider()
-st.caption("💡 ヒント：文章を編集してからSNSに貼り付けると、より熱い思いが伝わります！")
+    with tab2:
+        st.write("### スケジュールから一括生成")
+        bulk_input = st.text_area("チーム名リスト（一行ずつ）", height=150)
+        
+        if st.button("投稿文をまとめて作る"):
+            lines = bulk_input.split("\n")
+            output_data = []
+            count = 0
+            
+            for line in lines:
+                name_part = line.strip()
+                if name_part:
+                    matched = df[df["名前"].str.contains(name_part, na=False, case=False)]
+                    if not matched.empty:
+                        count += 1
+                        r = matched.iloc[0]
+                        x_id_r = r['X'] if r['X'] not in ["(確認できず)", "nan", ""] else ""
+                        insta_id_r = r['インスタ'] if r['インスタ'] not in ["(確認できず)", "nan", ""] else ""
+                        
+                        res_x = st.session_state.template_x.format(名前=r['名前'], X=x_id_r, インスタ=insta_id_r, タグ=r['タグ'])
+                        res_insta = st.session_state.template_insta.format(名前=r['名前'], X=x_id_r, インスタ=insta_id_r, タグ=r['タグ'])
+                        
+                        output_data.append({
+                            "スケジュール名": name_part,
+                            "正式チーム名": r['名前'],
+                            "X用テキスト": res_x,
+                            "Instagram用テキスト": res_insta
+                        })
+                        
+                        with st.expander(f"✅ {r['名前']}"):
+                            st.text(res_x)
+                            
+            st.write(f"合計 {count} チームの文章を作成しました。")
+            
+            if output_data:
+                df_out = pd.DataFrame(output_data)
+                csv_data = df_out.to_csv(index=False, encoding='utf-8-sig')
+                st.download_button(
+                    label="📥 作成した文言をCSV(Excel)で一括ダウンロード",
+                    data=csv_data,
+                    file_name="yosakoi_posts.csv",
+                    mime="text/csv",
+                    type="primary"
+                )
+else:
+    st.info("スプレッドシートのデータを読み込んでいます...")
