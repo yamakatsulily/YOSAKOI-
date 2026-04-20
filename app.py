@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import urllib.parse
-import re  # ★文字のお掃除用に新しく追加
+import re
 
 st.set_page_config(page_title="YOSAKOI現地投稿くん", layout="centered", initial_sidebar_state="expanded")
 
@@ -13,8 +13,8 @@ def normalize_text(text):
         return ""
     # 大文字小文字を揃える
     text = text.lower()
-    # 空白(全角半角)、引用符、カッコ類、記号を裏側ですべて消し去る
-    text = re.sub(r'[\s　"”\''’「」『』【】＆&()（）\-ー・!！〜~]', '', text)
+    # 空白(全角半角)、引用符、カッコ類、記号を裏側ですべて消し去る（※ダブルクォーテーションで囲んで安全に処理）
+    text = re.sub(r"[\s　\"”'’「」『』【】＆&()（）\-ー・!！〜~]", "", text)
     return text
 
 # ==========================================
@@ -105,23 +105,30 @@ if not df_teams.empty:
                 x_id = row['X'] if row['X'] not in ["(確認できず)", "nan", ""] else ""
                 insta_id = row['インスタ'] if row['インスタ'] not in ["(確認できず)", "nan", ""] else ""
                 
-                res_x = st.session_state.editing_x.format(名前=row['名前'], X=x_id, インスタ=insta_id, タグ=row['タグ'], part=part_num)
-                res_i = st.session_state.editing_i.format(名前=row['名前'], X=x_id, インスタ=insta_id, タグ=row['タグ'], part=part_num)
-
-                st.success(f"【{selected}】の文章を生成しました！")
-                t_x, t_i = st.tabs(["🐦 X (Twitter)", "📸 Instagram"])
-                
-                with t_x:
-                    char_count = len(res_x)
-                    if char_count <= 140:
-                        st.caption(f"🟢 文字数: {char_count}/140")
-                    else:
-                        st.error(f"🔴 文字数オーバー！: {char_count}/140")
-                    st.code(res_x, language="text")
-                    st.link_button("🐦 この内容でXを開く", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(res_x)}", type="primary", use_container_width=True)
+                # 安全に文章を生成する（エラー回避機能付き）
+                try:
+                    res_x = st.session_state.editing_x.format(名前=row['名前'], X=x_id, インスタ=insta_id, タグ=row['タグ'], part=part_num)
+                    res_i = st.session_state.editing_i.format(名前=row['名前'], X=x_id, インスタ=insta_id, タグ=row['タグ'], part=part_num)
                     
-                with t_i:
-                    st.code(res_i, language="text")
+                    st.success(f"【{selected}】の文章を生成しました！")
+                    t_x, t_i = st.tabs(["🐦 X (Twitter)", "📸 Instagram"])
+                    
+                    with t_x:
+                        char_count = len(res_x)
+                        if char_count <= 140:
+                            st.caption(f"🟢 文字数: {char_count}/140")
+                        else:
+                            st.error(f"🔴 文字数オーバー！: {char_count}/140")
+                        st.code(res_x, language="text")
+                        st.link_button("🐦 この内容でXを開く", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(res_x)}", type="primary", use_container_width=True)
+                        
+                    with t_i:
+                        st.code(res_i, language="text")
+                        
+                except KeyError as e:
+                    st.error(f"⚠️ テンプレートエラー: 登録されていない {e} が含まれています。")
+                except ValueError:
+                    st.error("⚠️ テンプレートエラー: 波カッコ { または } が余分に入っているか、閉じ忘れています。")
             else:
                 st.warning("見つかりません。")
 
@@ -143,28 +150,34 @@ if not df_teams.empty:
                 match = df_teams[df_teams["検索用"].str.contains(norm_name, na=False, regex=False)]
                 
                 if not match.empty:
-                    count += 1
                     r = match.iloc[0]
                     x_r = r['X'] if r['X'] not in ["(確認できず)", "nan", ""] else ""
                     i_r = r['インスタ'] if r['インスタ'] not in ["(確認できず)", "nan", ""] else ""
                     
-                    final_x = st.session_state.editing_x.format(名前=r['名前'], X=x_r, インスタ=i_r, タグ=r['タグ'], part=bulk_part)
-                    final_i = st.session_state.editing_i.format(名前=r['名前'], X=x_r, インスタ=i_r, タグ=r['タグ'], part=bulk_part)
-                    
-                    output_data.append({"チーム": r['名前'], "X文章": final_x, "インスタ文章": final_i})
-                    
-                    with st.expander(f"✅ {r['名前']}"):
-                        st.write("**🐦 X用**")
-                        char_count = len(final_x)
-                        if char_count <= 140:
-                            st.caption(f"🟢 {char_count}/140文字")
-                        else:
-                            st.error(f"🔴 {char_count}/140文字（オーバー）")
-                        st.code(final_x, language="text")
-                        st.link_button("🐦 この内容でXを開く", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(final_x)}", type="primary")
-                        st.write("---")
-                        st.write("**📸 インスタ用**")
-                        st.code(final_i, language="text")
+                    try:
+                        final_x = st.session_state.editing_x.format(名前=r['名前'], X=x_r, インスタ=i_r, タグ=r['タグ'], part=bulk_part)
+                        final_i = st.session_state.editing_i.format(名前=r['名前'], X=x_r, インスタ=i_r, タグ=r['タグ'], part=bulk_part)
+                        
+                        count += 1
+                        output_data.append({"チーム": r['名前'], "X文章": final_x, "インスタ文章": final_i})
+                        
+                        with st.expander(f"✅ {r['名前']}"):
+                            st.write("**🐦 X用**")
+                            char_count = len(final_x)
+                            if char_count <= 140:
+                                st.caption(f"🟢 {char_count}/140文字")
+                            else:
+                                st.error(f"🔴 {char_count}/140文字（オーバー）")
+                            st.code(final_x, language="text")
+                            st.link_button("🐦 この内容でXを開く", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(final_x)}", type="primary")
+                            st.write("---")
+                            st.write("**📸 インスタ用**")
+                            st.code(final_i, language="text")
+                            
+                    except KeyError as e:
+                        st.error(f"⚠️ {r['名前']}の生成エラー: 登録されていない {e} が含まれています。")
+                    except ValueError:
+                        st.error(f"⚠️ {r['名前']}の生成エラー: テンプレートの波カッコ {{ または }} が間違っています。")
                 else:
                     unmatched.append(name)
             
