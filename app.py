@@ -1,8 +1,21 @@
 import streamlit as st
 import pandas as pd
-import urllib.parse  # URL変換用に追加
+import urllib.parse
+import re  # ★文字のお掃除用に新しく追加
 
 st.set_page_config(page_title="YOSAKOI現地投稿くん", layout="centered", initial_sidebar_state="expanded")
+
+# ==========================================
+# 0. 検索を最強にする「文字のお掃除」関数
+# ==========================================
+def normalize_text(text):
+    if not isinstance(text, str):
+        return ""
+    # 大文字小文字を揃える
+    text = text.lower()
+    # 空白(全角半角)、引用符、カッコ類、記号を裏側ですべて消し去る
+    text = re.sub(r'[\s　"”\''’「」『』【】＆&()（）\-ー・!！〜~]', '', text)
+    return text
 
 # ==========================================
 # 1. URL設定
@@ -23,6 +36,10 @@ def load_data(url):
 df_teams = load_data(TEAM_SHEET_URL).rename(columns={"チーム名": "名前", "ふりがな": "かな", "Xアカウント": "X", "インスタグラム": "インスタ", "ハッシュタグ": "タグ"})
 df_templates = load_data(TEMPLATE_SHEET_URL).rename(columns={"行事名": "イベント名", "Twitter用": "X用", "Instagram用": "インスタ用"})
 
+# ★ 検索用の「お掃除済みテキスト」列を作っておく
+if not df_teams.empty:
+    df_teams["検索用"] = df_teams["名前"].apply(normalize_text) + df_teams["かな"].apply(normalize_text)
+
 # ==========================================
 # 3. サイドバー（設定エリア）
 # ==========================================
@@ -36,7 +53,6 @@ with st.sidebar:
         
         target_event = st.selectbox("🎪 イベントを選択", event_names, index=event_names.index(st.session_state.selected_event))
 
-        # イベント切り替え時の処理
         if "last_loaded_event" not in st.session_state or st.session_state.last_loaded_event != target_event:
             row = df_templates[df_templates["イベント名"] == target_event].iloc[0]
             st.session_state.editing_x = row["X用"]
@@ -65,7 +81,6 @@ with st.sidebar:
 # 4. メイン画面
 # ==========================================
 st.title("🎤 YOSAKOI現地投稿くん")
-st.info("👈 左のメニュー（≡）からイベントの選択や、ベース文章の変更ができます。")
 
 if not df_teams.empty:
     tab1, tab2 = st.tabs(["🔍 1件ずつ検索", "🗓 スケジュール一括生成"])
@@ -75,10 +90,13 @@ if not df_teams.empty:
         with col_search:
             query = st.text_input("チーム名検索", placeholder="ひらぎし、科学大など")
         with col_part:
-            part_num = st.text_input("part", value="1")
+            part_num = st.text_input("part", value="1", key="single_part")
 
         if query:
-            results = df_teams[df_teams["名前"].str.contains(query, na=False, case=False) | df_teams["かな"].str.contains(query, na=False, case=False)]
+            # 入力された文字もお掃除してから検索する
+            norm_q = normalize_text(query)
+            # regex=False で安全に完全一致・部分一致を探す
+            results = df_teams[df_teams["検索用"].str.contains(norm_q, na=False, regex=False)]
             
             if not results.empty:
                 selected = st.selectbox("チーム確定", results["名前"].tolist())
@@ -87,50 +105,45 @@ if not df_teams.empty:
                 x_id = row['X'] if row['X'] not in ["(確認できず)", "nan", ""] else ""
                 insta_id = row['インスタ'] if row['インスタ'] not in ["(確認できず)", "nan", ""] else ""
                 
-                # 置換処理
-                def format_text(template):
-                    return template.format(名前=row['名前'], X=x_id, インスタ=insta_id, タグ=row['タグ'], part=part_num)
-
-                res_x = format_text(st.session_state.editing_x)
-                res_i = format_text(st.session_state.editing_i)
+                res_x = st.session_state.editing_x.format(名前=row['名前'], X=x_id, インスタ=insta_id, タグ=row['タグ'], part=part_num)
+                res_i = st.session_state.editing_i.format(名前=row['名前'], X=x_id, インスタ=insta_id, タグ=row['タグ'], part=part_num)
 
                 st.success(f"【{selected}】の文章を生成しました！")
                 t_x, t_i = st.tabs(["🐦 X (Twitter)", "📸 Instagram"])
                 
                 with t_x:
-                    # ✅ 文字数チェッカー
                     char_count = len(res_x)
-                    remain = 140 - char_count
-                    if remain >= 0:
-                        st.caption(f"🟢 文字数: {char_count}文字 (あと {remain} 文字)")
+                    if char_count <= 140:
+                        st.caption(f"🟢 文字数: {char_count}/140")
                     else:
-                        st.error(f"🔴 文字数オーバー！: {char_count}文字 ({abs(remain)} 文字超過)")
-                    
+                        st.error(f"🔴 文字数オーバー！: {char_count}/140")
                     st.code(res_x, language="text")
-                    
-                    # ✅ Xへ直接飛ぶボタン
-                    encoded_x = urllib.parse.quote(res_x)
-                    st.link_button("🐦 この内容でX（Twitter）を開いて投稿する", f"https://twitter.com/intent/tweet?text={encoded_x}", type="primary", use_container_width=True)
+                    st.link_button("🐦 この内容でXを開く", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(res_x)}", type="primary", use_container_width=True)
                     
                 with t_i:
-                    st.caption("📸 インスタグラムは仕様上、直接文章を渡せないため右上アイコンからコピーしてご使用ください")
                     st.code(res_i, language="text")
             else:
                 st.warning("見つかりません。")
 
     with tab2:
-        bulk_input = st.text_area("チーム名リスト（一行ずつ）", height=150)
+        bulk_input = st.text_area("チーム名リスト（一行ずつ）", height=200)
         bulk_part = st.text_input("一括用part", value="1", key="bulk_part")
         
         if st.button("投稿文をまとめて作る"):
             lines = bulk_input.split("\n")
             output_data = []
             unmatched = []
+            count = 0
             for line in lines:
                 name = line.strip()
                 if not name: continue
-                match = df_teams[df_teams["名前"].str.contains(name, na=False, case=False)]
+                
+                # スケジュールの文字もお掃除して照らし合わせる
+                norm_name = normalize_text(name)
+                match = df_teams[df_teams["検索用"].str.contains(norm_name, na=False, regex=False)]
+                
                 if not match.empty:
+                    count += 1
                     r = match.iloc[0]
                     x_r = r['X'] if r['X'] not in ["(確認できず)", "nan", ""] else ""
                     i_r = r['インスタ'] if r['インスタ'] not in ["(確認できず)", "nan", ""] else ""
@@ -142,17 +155,13 @@ if not df_teams.empty:
                     
                     with st.expander(f"✅ {r['名前']}"):
                         st.write("**🐦 X用**")
-                        # 一括生成側にも文字数チェッカーと投稿ボタンを設置
                         char_count = len(final_x)
                         if char_count <= 140:
                             st.caption(f"🟢 {char_count}/140文字")
                         else:
                             st.error(f"🔴 {char_count}/140文字（オーバー）")
                         st.code(final_x, language="text")
-                        
-                        encoded_x_bulk = urllib.parse.quote(final_x)
-                        st.link_button("🐦 この内容でXを開く", f"https://twitter.com/intent/tweet?text={encoded_x_bulk}", type="primary")
-                        
+                        st.link_button("🐦 この内容でXを開く", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(final_x)}", type="primary")
                         st.write("---")
                         st.write("**📸 インスタ用**")
                         st.code(final_i, language="text")
@@ -163,6 +172,7 @@ if not df_teams.empty:
                 st.error(f"❌ 未登録：{', '.join(unmatched)}")
             
             if output_data:
+                st.success(f"合計 {count} チームの文章を作成しました！")
                 csv = pd.DataFrame(output_data).to_csv(index=False, encoding='utf-8-sig')
                 st.download_button("📥 全チーム分の文言をCSVでダウンロード", csv, "yosakoi_posts.csv", "text/csv", use_container_width=True)
 
