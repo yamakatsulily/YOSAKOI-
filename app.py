@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
+import urllib.parse  # URL変換用に追加
 
-st.set_page_config(page_title="YOSAKOI現地投稿くん", layout="centered")
+st.set_page_config(page_title="YOSAKOI現地投稿くん", layout="centered", initial_sidebar_state="expanded")
 
 # ==========================================
 # 1. URL設定
@@ -19,29 +20,23 @@ def load_data(url):
     except:
         return pd.DataFrame()
 
-df_teams_raw = load_data(TEAM_SHEET_URL)
-df_templates_raw = load_data(TEMPLATE_SHEET_URL)
-
-# 列名の整理
-df_teams = df_teams_raw.rename(columns={"チーム名": "名前", "ふりがな": "かな", "Xアカウント": "X", "インスタグラム": "インスタ", "ハッシュタグ": "タグ"})
-df_templates = df_templates_raw.rename(columns={"行事名": "イベント名", "Twitter用": "X用", "Instagram用": "インスタ用"})
-
-st.title("🎤 YOSAKOI現地投稿くん")
+df_teams = load_data(TEAM_SHEET_URL).rename(columns={"チーム名": "名前", "ふりがな": "かな", "Xアカウント": "X", "インスタグラム": "インスタ", "ハッシュタグ": "タグ"})
+df_templates = load_data(TEMPLATE_SHEET_URL).rename(columns={"行事名": "イベント名", "Twitter用": "X用", "Instagram用": "インスタ用"})
 
 # ==========================================
-# 3. テンプレート管理（ここを強化しました）
+# 3. サイドバー（設定エリア）
 # ==========================================
-with st.expander("⚙️ 投稿テンプレートの選択と編集", expanded=True):
+with st.sidebar:
+    st.header("⚙️ 投稿設定")
+    
     if not df_templates.empty:
-        # イベント選択
         event_names = df_templates["イベント名"].tolist()
-        # 選択状態を保持
         if "selected_event" not in st.session_state:
             st.session_state.selected_event = event_names[0]
         
-        target_event = st.selectbox("イベントを選択", event_names, index=event_names.index(st.session_state.selected_event))
+        target_event = st.selectbox("🎪 イベントを選択", event_names, index=event_names.index(st.session_state.selected_event))
 
-        # イベントが切り替わった場合、または初回のみスプレッドシートから読み込む
+        # イベント切り替え時の処理
         if "last_loaded_event" not in st.session_state or st.session_state.last_loaded_event != target_event:
             row = df_templates[df_templates["イベント名"] == target_event].iloc[0]
             st.session_state.editing_x = row["X用"]
@@ -49,22 +44,29 @@ with st.expander("⚙️ 投稿テンプレートの選択と編集", expanded=T
             st.session_state.last_loaded_event = target_event
             st.session_state.selected_event = target_event
 
-        # 【重要】ここでの入力内容は session_state に直接保存されるため、チーム検索しても消えません
-        st.session_state.editing_x = st.text_area("X用ベース文章", st.session_state.editing_x, height=150)
-        st.session_state.editing_i = st.text_area("インスタ用ベース文章", st.session_state.editing_i, height=150)
+        st.write("📝 ベース文章の微調整")
+        st.session_state.editing_x = st.text_area("🐦 X用ベース", st.session_state.editing_x, height=150)
+        st.session_state.editing_i = st.text_area("📸 インスタ用ベース", st.session_state.editing_i, height=150)
         st.caption("※ {名前} {X} {インスタ} {タグ} {part} が自動置換されます")
         
-        if st.button("🔄 スプレッドシートの値に戻す（編集をリセット）"):
+        if st.button("🔄 シートの文章にリセット"):
             del st.session_state.last_loaded_event
             st.rerun()
     else:
         st.error("テンプレートが読み込めません。")
-
-st.divider()
+        
+    st.divider()
+    if st.button("🔄 最新のチーム名簿を読み込む"):
+        st.cache_data.clear()
+        st.success("最新情報を読み込みました！")
+        st.rerun()
 
 # ==========================================
-# 4. メイン機能
+# 4. メイン画面
 # ==========================================
+st.title("🎤 YOSAKOI現地投稿くん")
+st.info("👈 左のメニュー（≡）からイベントの選択や、ベース文章の変更ができます。")
+
 if not df_teams.empty:
     tab1, tab2 = st.tabs(["🔍 1件ずつ検索", "🗓 スケジュール一括生成"])
 
@@ -92,13 +94,26 @@ if not df_teams.empty:
                 res_x = format_text(st.session_state.editing_x)
                 res_i = format_text(st.session_state.editing_i)
 
-                st.success(f"【{selected}】を生成しました")
+                st.success(f"【{selected}】の文章を生成しました！")
                 t_x, t_i = st.tabs(["🐦 X (Twitter)", "📸 Instagram"])
+                
                 with t_x:
-                    st.caption("👇 右上のアイコンでコピー")
+                    # ✅ 文字数チェッカー
+                    char_count = len(res_x)
+                    remain = 140 - char_count
+                    if remain >= 0:
+                        st.caption(f"🟢 文字数: {char_count}文字 (あと {remain} 文字)")
+                    else:
+                        st.error(f"🔴 文字数オーバー！: {char_count}文字 ({abs(remain)} 文字超過)")
+                    
                     st.code(res_x, language="text")
+                    
+                    # ✅ Xへ直接飛ぶボタン
+                    encoded_x = urllib.parse.quote(res_x)
+                    st.link_button("🐦 この内容でX（Twitter）を開いて投稿する", f"https://twitter.com/intent/tweet?text={encoded_x}", type="primary", use_container_width=True)
+                    
                 with t_i:
-                    st.caption("👇 右上のアイコンでコピー")
+                    st.caption("📸 インスタグラムは仕様上、直接文章を渡せないため右上アイコンからコピーしてご使用ください")
                     st.code(res_i, language="text")
             else:
                 st.warning("見つかりません。")
@@ -127,7 +142,18 @@ if not df_teams.empty:
                     
                     with st.expander(f"✅ {r['名前']}"):
                         st.write("**🐦 X用**")
+                        # 一括生成側にも文字数チェッカーと投稿ボタンを設置
+                        char_count = len(final_x)
+                        if char_count <= 140:
+                            st.caption(f"🟢 {char_count}/140文字")
+                        else:
+                            st.error(f"🔴 {char_count}/140文字（オーバー）")
                         st.code(final_x, language="text")
+                        
+                        encoded_x_bulk = urllib.parse.quote(final_x)
+                        st.link_button("🐦 この内容でXを開く", f"https://twitter.com/intent/tweet?text={encoded_x_bulk}", type="primary")
+                        
+                        st.write("---")
                         st.write("**📸 インスタ用**")
                         st.code(final_i, language="text")
                 else:
@@ -138,7 +164,7 @@ if not df_teams.empty:
             
             if output_data:
                 csv = pd.DataFrame(output_data).to_csv(index=False, encoding='utf-8-sig')
-                st.download_button("📥 全チーム分の文言をCSVでダウンロード", csv, "yosakoi_posts.csv", "text/csv")
+                st.download_button("📥 全チーム分の文言をCSVでダウンロード", csv, "yosakoi_posts.csv", "text/csv", use_container_width=True)
 
 else:
     st.info("データを読み込み中です...")
