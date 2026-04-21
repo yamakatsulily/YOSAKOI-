@@ -10,9 +10,9 @@ st.set_page_config(page_title="YOSAKOI現地投稿くん", layout="centered", in
 # ==========================================
 st.markdown("""
 <style>
-    /* 画面上部の無駄な余白を削る */
+    /* 画面上部の余白を、アイコンに被らない程度に調整 */
     .block-container {
-        padding-top: 2rem;
+        padding-top: 4.5rem; /* ここを 2rem から 4.5rem に増やしました */
         padding-bottom: 2rem;
     }
     /* ボタンを少し丸くしてスマホっぽく */
@@ -27,6 +27,7 @@ st.markdown("""
         font-weight: 800;
         margin-bottom: 0px;
         color: #333;
+        line-height: 1.2;
     }
     .custom-subtitle {
         text-align: center;
@@ -111,7 +112,6 @@ with st.sidebar:
 # ==========================================
 # 4. メイン画面
 # ==========================================
-# 🎨 旧st.title()の代わりに、CSSを当てたおしゃれなタイトルを表示
 st.markdown("<p class='custom-title'>🎤 YOSAKOI現地投稿くん</p>", unsafe_allow_html=True)
 st.markdown("<p class='custom-subtitle'>SNS POSTING ASSISTANT</p>", unsafe_allow_html=True)
 
@@ -166,7 +166,6 @@ if not df_teams.empty:
         bulk_input = st.text_area("チーム名リスト（一行ずつ）", height=200)
         bulk_part = st.text_input("一括用part", value="1", key="bulk_part")
         
-        # ボタンを横幅いっぱいに広げて押しやすくする
         if st.button("投稿文をまとめて作る", type="primary", use_container_width=True):
             lines = bulk_input.split("\n")
             output_data = []
