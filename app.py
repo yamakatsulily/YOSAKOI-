@@ -6,14 +6,46 @@ import re
 st.set_page_config(page_title="YOSAKOI現地投稿くん", layout="centered", initial_sidebar_state="expanded")
 
 # ==========================================
+# 🎨 スマホアプリ風にする魔法のデザイン（CSS）
+# ==========================================
+st.markdown("""
+<style>
+    /* 画面上部の無駄な余白を削る */
+    .block-container {
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+    }
+    /* ボタンを少し丸くしてスマホっぽく */
+    div.stButton > button {
+        border-radius: 8px;
+        font-weight: bold;
+    }
+    /* メインタイトルのデザイン */
+    .custom-title {
+        text-align: center;
+        font-size: 1.8rem;
+        font-weight: 800;
+        margin-bottom: 0px;
+        color: #333;
+    }
+    .custom-subtitle {
+        text-align: center;
+        font-size: 0.8rem;
+        color: #666;
+        margin-top: 0px;
+        margin-bottom: 20px;
+        letter-spacing: 1px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# ==========================================
 # 0. 検索を最強にする「文字のお掃除」関数
 # ==========================================
 def normalize_text(text):
     if not isinstance(text, str):
         return ""
-    # 大文字小文字を揃える
     text = text.lower()
-    # 空白(全角半角)、引用符、カッコ類、記号を裏側ですべて消し去る（※全角チルダ「～」も追加して波線系を完全網羅！）
     text = re.sub(r"[\s　\"”'’「」『』【】＆&()（）\-ー・!！〜~～]", "", text)
     return text
 
@@ -36,7 +68,6 @@ def load_data(url):
 df_teams = load_data(TEAM_SHEET_URL).rename(columns={"チーム名": "名前", "ふりがな": "かな", "Xアカウント": "X", "インスタグラム": "インスタ", "ハッシュタグ": "タグ"})
 df_templates = load_data(TEMPLATE_SHEET_URL).rename(columns={"行事名": "イベント名", "Twitter用": "X用", "Instagram用": "インスタ用"})
 
-# ★ 検索用の「お掃除済みテキスト」列を作っておく
 if not df_teams.empty:
     df_teams["検索用"] = df_teams["名前"].apply(normalize_text) + df_teams["かな"].apply(normalize_text)
 
@@ -65,14 +96,14 @@ with st.sidebar:
         st.session_state.editing_i = st.text_area("📸 インスタ用ベース", st.session_state.editing_i, height=150)
         st.caption("※ {名前} {X} {インスタ} {タグ} {part} が自動置換されます")
         
-        if st.button("🔄 シートの文章にリセット"):
+        if st.button("🔄 シートの文章にリセット", use_container_width=True):
             del st.session_state.last_loaded_event
             st.rerun()
     else:
         st.error("テンプレートが読み込めません。")
         
     st.divider()
-    if st.button("🔄 最新のチーム名簿を読み込む"):
+    if st.button("🔄 最新のチーム名簿を読み込む", use_container_width=True):
         st.cache_data.clear()
         st.success("最新情報を読み込みました！")
         st.rerun()
@@ -80,7 +111,9 @@ with st.sidebar:
 # ==========================================
 # 4. メイン画面
 # ==========================================
-st.title("🎤 YOSAKOI現地投稿くん")
+# 🎨 旧st.title()の代わりに、CSSを当てたおしゃれなタイトルを表示
+st.markdown("<p class='custom-title'>🎤 YOSAKOI現地投稿くん</p>", unsafe_allow_html=True)
+st.markdown("<p class='custom-subtitle'>SNS POSTING ASSISTANT</p>", unsafe_allow_html=True)
 
 if not df_teams.empty:
     tab1, tab2 = st.tabs(["🔍 1件ずつ検索", "🗓 スケジュール一括生成"])
@@ -93,9 +126,7 @@ if not df_teams.empty:
             part_num = st.text_input("part", value="1", key="single_part")
 
         if query:
-            # 入力された文字もお掃除してから検索する
             norm_q = normalize_text(query)
-            # regex=False で安全に完全一致・部分一致を探す
             results = df_teams[df_teams["検索用"].str.contains(norm_q, na=False, regex=False)]
             
             if not results.empty:
@@ -105,7 +136,6 @@ if not df_teams.empty:
                 x_id = row['X'] if row['X'] not in ["(確認できず)", "nan", ""] else ""
                 insta_id = row['インスタ'] if row['インスタ'] not in ["(確認できず)", "nan", ""] else ""
                 
-                # 安全に文章を生成する（エラー回避機能付き）
                 try:
                     res_x = st.session_state.editing_x.format(名前=row['名前'], X=x_id, インスタ=insta_id, タグ=row['タグ'], part=part_num)
                     res_i = st.session_state.editing_i.format(名前=row['名前'], X=x_id, インスタ=insta_id, タグ=row['タグ'], part=part_num)
@@ -136,7 +166,8 @@ if not df_teams.empty:
         bulk_input = st.text_area("チーム名リスト（一行ずつ）", height=200)
         bulk_part = st.text_input("一括用part", value="1", key="bulk_part")
         
-        if st.button("投稿文をまとめて作る"):
+        # ボタンを横幅いっぱいに広げて押しやすくする
+        if st.button("投稿文をまとめて作る", type="primary", use_container_width=True):
             lines = bulk_input.split("\n")
             output_data = []
             unmatched = []
@@ -145,7 +176,6 @@ if not df_teams.empty:
                 name = line.strip()
                 if not name: continue
                 
-                # スケジュールの文字もお掃除して照らし合わせる
                 norm_name = normalize_text(name)
                 match = df_teams[df_teams["検索用"].str.contains(norm_name, na=False, regex=False)]
                 
@@ -169,7 +199,7 @@ if not df_teams.empty:
                             else:
                                 st.error(f"🔴 {char_count}/140文字（オーバー）")
                             st.code(final_x, language="text")
-                            st.link_button("🐦 この内容でXを開く", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(final_x)}", type="primary")
+                            st.link_button("🐦 この内容でXを開く", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(final_x)}", type="primary", use_container_width=True)
                             st.write("---")
                             st.write("**📸 インスタ用**")
                             st.code(final_i, language="text")
