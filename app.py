@@ -113,8 +113,7 @@ st.markdown("<p class='custom-title'>🎤 YOSAKOI現地投稿くん</p>", unsafe
 st.markdown("<p class='custom-subtitle'>SNS POSTING ASSISTANT</p>", unsafe_allow_html=True)
 
 if not df_teams.empty:
-    # 🌟 タブを3つに増やしました！
-    tab1, tab2, tab3 = st.tabs(["🔍 1件ずつ", "🗓 一括生成", "📸 4チームピックアップ"])
+    tab1, tab2, tab3 = st.tabs(["🔍 1件ずつ", "🗓 一括生成", "📸 合同ピックアップ"])
 
     # -----------------------------
     # タブ1: 1件ずつ検索
@@ -211,17 +210,26 @@ if not df_teams.empty:
                 st.error(f"❌ 未登録：{', '.join(unmatched)}")
 
     # -----------------------------
-    # 🌟 新タブ3: 4チーム合同ピックアップ
+    # 🌟 新タブ3: 合同ピックアップ（ボタン進化版）
     # -----------------------------
     with tab3:
-        st.info("💡 スケジュールから写真を載せる4チームだけを選んで、1つの合同投稿を作ります！")
-        joint_input = st.text_area("タイムテーブルを貼り付け", height=150, key="joint_input_tab3", placeholder="ここにスケジュールをコピペしてください")
+        st.info("💡 スケジュールから4チームを選んで、1つの合同投稿を作ります！")
+        
+        # 1. テンプレート編集機能を追加！
+        if "joint_base_text" not in st.session_state:
+            st.session_state.joint_base_text = "現地から速報！🔥\n素晴らしい演舞をお届けします📸✨\n\n{teams}\n\n#YOSAKOIソーラン祭り #よさこい"
+            
+        with st.expander("⚙️ 合同投稿のテンプレートを編集", expanded=False):
+            st.caption("※ {teams} の部分に、選んだチームのリストが自動で入ります")
+            st.session_state.joint_base_text = st.text_area("合同用ベース文章", st.session_state.joint_base_text, height=130)
+        
+        # 2. スケジュール入力
+        joint_input = st.text_area("タイムテーブルを貼り付け", height=120, key="joint_input_tab3")
         
         if joint_input:
             lines = joint_input.split("\n")
             matched_teams = []
             
-            # スケジュールからチームを抽出
             for line in lines:
                 name = line.strip()
                 if not name: continue
@@ -230,37 +238,63 @@ if not df_teams.empty:
                 if not match.empty:
                     matched_teams.append(match.iloc[0]["名前"])
             
-            # 重複を削除してリスト化
-            matched_teams = list(dict.fromkeys(matched_teams))
+            matched_teams = list(dict.fromkeys(matched_teams)) # 重複削除
             
             if matched_teams:
-                st.write("👇 写真を載せるチームを選んでください（最大4つ）")
-                # ★最大4つまでしか選べない魔法のマルチセレクト
-                selected_joint = st.multiselect("チーム選択", matched_teams, max_selections=4)
+                st.write("👇 写真を載せるチームをタップしてください（最大4つ）")
                 
-                if selected_joint:
-                    # 合同テキストのベースを作成
-                    joint_text = "現地から速報！🔥\n素晴らしい演舞をお届けします📸✨\n\n"
-                    
-                    for t_name in selected_joint:
+                # 選択されたチームを記憶するリストを準備
+                if "selected_joint_teams" not in st.session_state:
+                    st.session_state.selected_joint_teams = []
+                
+                # 古い記憶（入力が変わった時）を掃除
+                st.session_state.selected_joint_teams = [t for t in st.session_state.selected_joint_teams if t in matched_teams]
+                
+                # 3. スマホで押しやすい「2列のボタン」を展開
+                cols = st.columns(2)
+                for i, t_name in enumerate(matched_teams):
+                    with cols[i % 2]:
+                        is_selected = t_name in st.session_state.selected_joint_teams
+                        # 選ばれている時はチェックマーク、それ以外は四角を表示
+                        btn_label = f"✅ {t_name}" if is_selected else f"⬜ {t_name}"
+                        
+                        # ボタンが押された時の処理
+                        if st.button(btn_label, key=f"btn_joint_{t_name}", use_container_width=True):
+                            if is_selected:
+                                st.session_state.selected_joint_teams.remove(t_name)
+                                st.rerun() # 画面をリフレッシュ
+                            else:
+                                if len(st.session_state.selected_joint_teams) < 4:
+                                    st.session_state.selected_joint_teams.append(t_name)
+                                    st.rerun()
+                                else:
+                                    st.warning("⚠️ 画像は4枚までなので、4チームまでしか選べません！")
+                
+                # 4. チームが選ばれていれば文章を生成
+                if st.session_state.selected_joint_teams:
+                    team_texts = []
+                    for t_name in st.session_state.selected_joint_teams:
                         row = df_teams[df_teams["名前"] == t_name].iloc[0]
                         x_id = row['X'] if row['X'] not in ["(確認できず)", "nan", ""] else ""
-                        joint_text += f"🎤 {t_name} {x_id}\n"
+                        team_texts.append(f"🎤 {t_name} {x_id}".strip())
                     
-                    joint_text += "\n#YOSAKOIソーラン祭り #よさこい"
+                    teams_joined = "\n".join(team_texts)
                     
-                    st.success("✅ 合同用の文章ができました！下で微調整してからXを開けます。")
+                    # {teams} を実際のチームリストに置き換える
+                    final_joint_text = st.session_state.joint_base_text.replace("{teams}", teams_joined)
                     
-                    # 現場で書き足せるようにテキストエリアで表示
-                    final_joint_text = st.text_area("✍️ 投稿文（ここで自由に書き足しOK!）", value=joint_text, height=200)
+                    st.success(f"✅ {len(st.session_state.selected_joint_teams)}チーム選択中！")
                     
-                    char_count = len(final_joint_text)
+                    # 現場で書き足せる最終確認エリア
+                    final_joint_text_edited = st.text_area("✍️ 最終確認（ここでさらに書き足しOK!）", value=final_joint_text, height=200, key="final_joint_edited")
+                    
+                    char_count = len(final_joint_text_edited)
                     if char_count <= 140:
                         st.caption(f"🟢 文字数: {char_count}/140")
                     else:
                         st.error(f"🔴 文字数オーバー！: {char_count}/140")
                     
-                    st.link_button("🐦 この4チームでXを開く", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(final_joint_text)}", type="primary", use_container_width=True)
+                    st.link_button("🐦 この内容でXを開く", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(final_joint_text_edited)}", type="primary", use_container_width=True)
 
 else:
     st.info("データを読み込み中です...")
