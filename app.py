@@ -10,17 +10,14 @@ st.set_page_config(page_title="YOSAKOI現地投稿くん", layout="centered", in
 # ==========================================
 st.markdown("""
 <style>
-    /* 画面上部の余白を、アイコンに被らない程度に調整 */
     .block-container {
-        padding-top: 4.5rem; /* ここを 2rem から 4.5rem に増やしました */
+        padding-top: 4.5rem;
         padding-bottom: 2rem;
     }
-    /* ボタンを少し丸くしてスマホっぽく */
     div.stButton > button {
         border-radius: 8px;
         font-weight: bold;
     }
-    /* メインタイトルのデザイン */
     .custom-title {
         text-align: center;
         font-size: 1.8rem;
@@ -41,7 +38,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 0. 検索を最強にする「文字のお掃除」関数
+# 0. 文字のお掃除関数
 # ==========================================
 def normalize_text(text):
     if not isinstance(text, str):
@@ -116,8 +113,12 @@ st.markdown("<p class='custom-title'>🎤 YOSAKOI現地投稿くん</p>", unsafe
 st.markdown("<p class='custom-subtitle'>SNS POSTING ASSISTANT</p>", unsafe_allow_html=True)
 
 if not df_teams.empty:
-    tab1, tab2 = st.tabs(["🔍 1件ずつ検索", "🗓 スケジュール一括生成"])
+    # 🌟 タブを3つに増やしました！
+    tab1, tab2, tab3 = st.tabs(["🔍 1件ずつ", "🗓 一括生成", "📸 4チームピックアップ"])
 
+    # -----------------------------
+    # タブ1: 1件ずつ検索
+    # -----------------------------
     with tab1:
         col_search, col_part = st.columns([3, 1])
         with col_search:
@@ -162,8 +163,11 @@ if not df_teams.empty:
             else:
                 st.warning("見つかりません。")
 
+    # -----------------------------
+    # タブ2: スケジュール一括生成
+    # -----------------------------
     with tab2:
-        bulk_input = st.text_area("チーム名リスト（一行ずつ）", height=200)
+        bulk_input = st.text_area("チーム名リスト（一行ずつ）", height=150, key="bulk_input_tab2")
         bulk_part = st.text_input("一括用part", value="1", key="bulk_part")
         
         if st.button("投稿文をまとめて作る", type="primary", use_container_width=True):
@@ -192,31 +196,71 @@ if not df_teams.empty:
                         
                         with st.expander(f"✅ {r['名前']}"):
                             st.write("**🐦 X用**")
-                            char_count = len(final_x)
-                            if char_count <= 140:
-                                st.caption(f"🟢 {char_count}/140文字")
-                            else:
-                                st.error(f"🔴 {char_count}/140文字（オーバー）")
                             st.code(final_x, language="text")
                             st.link_button("🐦 この内容でXを開く", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(final_x)}", type="primary", use_container_width=True)
                             st.write("---")
                             st.write("**📸 インスタ用**")
                             st.code(final_i, language="text")
                             
-                    except KeyError as e:
-                        st.error(f"⚠️ {r['名前']}の生成エラー: 登録されていない {e} が含まれています。")
-                    except ValueError:
-                        st.error(f"⚠️ {r['名前']}の生成エラー: テンプレートの波カッコ {{ または }} が間違っています。")
+                    except Exception as e:
+                        st.error(f"⚠️ {r['名前']}の生成エラー")
                 else:
                     unmatched.append(name)
             
             if unmatched:
                 st.error(f"❌ 未登録：{', '.join(unmatched)}")
+
+    # -----------------------------
+    # 🌟 新タブ3: 4チーム合同ピックアップ
+    # -----------------------------
+    with tab3:
+        st.info("💡 スケジュールから写真を載せる4チームだけを選んで、1つの合同投稿を作ります！")
+        joint_input = st.text_area("タイムテーブルを貼り付け", height=150, key="joint_input_tab3", placeholder="ここにスケジュールをコピペしてください")
+        
+        if joint_input:
+            lines = joint_input.split("\n")
+            matched_teams = []
             
-            if output_data:
-                st.success(f"合計 {count} チームの文章を作成しました！")
-                csv = pd.DataFrame(output_data).to_csv(index=False, encoding='utf-8-sig')
-                st.download_button("📥 全チーム分の文言をCSVでダウンロード", csv, "yosakoi_posts.csv", "text/csv", use_container_width=True)
+            # スケジュールからチームを抽出
+            for line in lines:
+                name = line.strip()
+                if not name: continue
+                norm_name = normalize_text(name)
+                match = df_teams[df_teams["検索用"].str.contains(norm_name, na=False, regex=False)]
+                if not match.empty:
+                    matched_teams.append(match.iloc[0]["名前"])
+            
+            # 重複を削除してリスト化
+            matched_teams = list(dict.fromkeys(matched_teams))
+            
+            if matched_teams:
+                st.write("👇 写真を載せるチームを選んでください（最大4つ）")
+                # ★最大4つまでしか選べない魔法のマルチセレクト
+                selected_joint = st.multiselect("チーム選択", matched_teams, max_selections=4)
+                
+                if selected_joint:
+                    # 合同テキストのベースを作成
+                    joint_text = "現地から速報！🔥\n素晴らしい演舞をお届けします📸✨\n\n"
+                    
+                    for t_name in selected_joint:
+                        row = df_teams[df_teams["名前"] == t_name].iloc[0]
+                        x_id = row['X'] if row['X'] not in ["(確認できず)", "nan", ""] else ""
+                        joint_text += f"🎤 {t_name} {x_id}\n"
+                    
+                    joint_text += "\n#YOSAKOIソーラン祭り #よさこい"
+                    
+                    st.success("✅ 合同用の文章ができました！下で微調整してからXを開けます。")
+                    
+                    # 現場で書き足せるようにテキストエリアで表示
+                    final_joint_text = st.text_area("✍️ 投稿文（ここで自由に書き足しOK!）", value=joint_text, height=200)
+                    
+                    char_count = len(final_joint_text)
+                    if char_count <= 140:
+                        st.caption(f"🟢 文字数: {char_count}/140")
+                    else:
+                        st.error(f"🔴 文字数オーバー！: {char_count}/140")
+                    
+                    st.link_button("🐦 この4チームでXを開く", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(final_joint_text)}", type="primary", use_container_width=True)
 
 else:
     st.info("データを読み込み中です...")
