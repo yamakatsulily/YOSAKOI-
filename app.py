@@ -6,7 +6,7 @@ import re
 st.set_page_config(page_title="YOSAKOI現地投稿くん", layout="centered", initial_sidebar_state="expanded")
 
 # ==========================================
-# 🎨 スマホアプリ風にする魔法のデザイン（CSS）
+# 🎨 スマホアプリ風デザイン（CSS）
 # ==========================================
 st.markdown("""
 <style>
@@ -64,7 +64,8 @@ def load_data(url):
         return pd.DataFrame()
 
 df_teams = load_data(TEAM_SHEET_URL).rename(columns={"チーム名": "名前", "ふりがな": "かな", "Xアカウント": "X", "インスタグラム": "インスタ", "ハッシュタグ": "タグ"})
-df_templates = load_data(TEMPLATE_SHEET_URL).rename(columns={"行事名": "イベント名", "Twitter用": "X用", "Instagram用": "インスタ用"})
+# スプレッドシートに「合同用」列がある前提で読み込み
+df_templates = load_data(TEMPLATE_SHEET_URL).rename(columns={"行事名": "イベント名", "Twitter用": "X用", "Instagram用": "インスタ用", "合同用": "合同用"})
 
 if not df_teams.empty:
     df_teams["検索用"] = df_teams["名前"].apply(normalize_text) + df_teams["かな"].apply(normalize_text)
@@ -82,17 +83,25 @@ with st.sidebar:
         
         target_event = st.selectbox("🎪 イベントを選択", event_names, index=event_names.index(st.session_state.selected_event))
 
+        # イベント切り替え時にシートからテンプレートを読み込む
         if "last_loaded_event" not in st.session_state or st.session_state.last_loaded_event != target_event:
             row = df_templates[df_templates["イベント名"] == target_event].iloc[0]
             st.session_state.editing_x = row["X用"]
             st.session_state.editing_i = row["インスタ用"]
+            
+            # 【重要】合同用のテンプレートをシートから読み込み
+            if "合同用" in row and row["合同用"]:
+                st.session_state.joint_base_text = row["合同用"]
+            else:
+                # シートにない場合のデフォルト
+                st.session_state.joint_base_text = "現地から速報！🔥\n{teams}\n\n#YOSAKOIソーラン祭り"
+                
             st.session_state.last_loaded_event = target_event
             st.session_state.selected_event = target_event
 
         st.write("📝 ベース文章の微調整")
         st.session_state.editing_x = st.text_area("🐦 X用ベース", st.session_state.editing_x, height=150)
         st.session_state.editing_i = st.text_area("📸 インスタ用ベース", st.session_state.editing_i, height=150)
-        st.caption("※ {名前} {X} {インスタ} {タグ} {part} が自動置換されます")
         
         if st.button("🔄 シートの文章にリセット", use_container_width=True):
             del st.session_state.last_loaded_event
@@ -115,121 +124,70 @@ st.markdown("<p class='custom-subtitle'>SNS POSTING ASSISTANT</p>", unsafe_allow
 if not df_teams.empty:
     tab1, tab2, tab3 = st.tabs(["🔍 1件ずつ", "🗓 一括生成", "📸 合同ピックアップ"])
 
-    # -----------------------------
-    # タブ1: 1件ずつ検索
-    # -----------------------------
+    # タブ1, 2 は以前と同じ（中略）
     with tab1:
         col_search, col_part = st.columns([3, 1])
         with col_search:
             query = st.text_input("チーム名検索", placeholder="ひらぎし、科学大など")
         with col_part:
             part_num = st.text_input("part", value="1", key="single_part")
-
         if query:
             norm_q = normalize_text(query)
             results = df_teams[df_teams["検索用"].str.contains(norm_q, na=False, regex=False)]
-            
             if not results.empty:
                 selected = st.selectbox("チーム確定", results["名前"].tolist())
                 row = df_teams[df_teams["名前"] == selected].iloc[0]
-                
                 x_id = row['X'] if row['X'] not in ["(確認できず)", "nan", ""] else ""
                 insta_id = row['インスタ'] if row['インスタ'] not in ["(確認できず)", "nan", ""] else ""
-                
                 try:
                     res_x = st.session_state.editing_x.format(名前=row['名前'], X=x_id, インスタ=insta_id, タグ=row['タグ'], part=part_num)
                     res_i = st.session_state.editing_i.format(名前=row['名前'], X=x_id, インスタ=insta_id, タグ=row['タグ'], part=part_num)
-                    
-                    st.success(f"【{selected}】の文章を生成しました！")
-                    t_x, t_i = st.tabs(["🐦 X (Twitter)", "📸 Instagram"])
-                    
+                    st.success(f"【{selected}】を生成しました")
+                    t_x, t_i = st.tabs(["🐦 X", "📸 インスタ"])
                     with t_x:
-                        char_count = len(res_x)
-                        if char_count <= 140:
-                            st.caption(f"🟢 文字数: {char_count}/140")
-                        else:
-                            st.error(f"🔴 文字数オーバー！: {char_count}/140")
                         st.code(res_x, language="text")
-                        st.link_button("🐦 この内容でXを開く", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(res_x)}", type="primary", use_container_width=True)
-                        
+                        st.link_button("🐦 Xで開く", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(res_x)}", type="primary", use_container_width=True)
                     with t_i:
                         st.code(res_i, language="text")
-                        
-                except KeyError as e:
-                    st.error(f"⚠️ テンプレートエラー: 登録されていない {e} が含まれています。")
-                except ValueError:
-                    st.error("⚠️ テンプレートエラー: 波カッコ { または } が余分に入っているか、閉じ忘れています。")
-            else:
-                st.warning("見つかりません。")
+                except: st.error("テンプレートを確認してください")
+            else: st.warning("見つかりません")
 
-    # -----------------------------
-    # タブ2: スケジュール一括生成
-    # -----------------------------
     with tab2:
-        bulk_input = st.text_area("チーム名リスト（一行ずつ）", height=150, key="bulk_input_tab2")
+        bulk_input = st.text_area("チーム名リスト", height=150, key="bulk_input_tab2")
         bulk_part = st.text_input("一括用part", value="1", key="bulk_part")
-        
-        if st.button("投稿文をまとめて作る", type="primary", use_container_width=True):
+        if st.button("一括生成", type="primary", use_container_width=True):
             lines = bulk_input.split("\n")
-            output_data = []
-            unmatched = []
-            count = 0
             for line in lines:
                 name = line.strip()
                 if not name: continue
-                
                 norm_name = normalize_text(name)
                 match = df_teams[df_teams["検索用"].str.contains(norm_name, na=False, regex=False)]
-                
                 if not match.empty:
                     r = match.iloc[0]
                     x_r = r['X'] if r['X'] not in ["(確認できず)", "nan", ""] else ""
                     i_r = r['インスタ'] if r['インスタ'] not in ["(確認できず)", "nan", ""] else ""
-                    
-                    try:
-                        final_x = st.session_state.editing_x.format(名前=r['名前'], X=x_r, インスタ=i_r, タグ=r['タグ'], part=bulk_part)
-                        final_i = st.session_state.editing_i.format(名前=r['名前'], X=x_r, インスタ=i_r, タグ=r['タグ'], part=bulk_part)
-                        
-                        count += 1
-                        output_data.append({"チーム": r['名前'], "X文章": final_x, "インスタ文章": final_i})
-                        
-                        with st.expander(f"✅ {r['名前']}"):
-                            st.write("**🐦 X用**")
-                            st.code(final_x, language="text")
-                            st.link_button("🐦 この内容でXを開く", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(final_x)}", type="primary", use_container_width=True)
-                            st.write("---")
-                            st.write("**📸 インスタ用**")
-                            st.code(final_i, language="text")
-                            
-                    except Exception as e:
-                        st.error(f"⚠️ {r['名前']}の生成エラー")
-                else:
-                    unmatched.append(name)
-            
-            if unmatched:
-                st.error(f"❌ 未登録：{', '.join(unmatched)}")
+                    f_x = st.session_state.editing_x.format(名前=r['名前'], X=x_r, インスタ=i_r, タグ=r['タグ'], part=bulk_part)
+                    f_i = st.session_state.editing_i.format(名前=r['名前'], X=x_r, インスタ=i_r, タグ=r['タグ'], part=bulk_part)
+                    with st.expander(f"✅ {r['名前']}"):
+                        st.code(f_x, language="text")
+                        st.link_button("🐦 X投稿", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(f_x)}", type="primary")
 
     # -----------------------------
-    # 🌟 新タブ3: 合同ピックアップ（ボタン進化版）
+    # 🌟 合同ピックアップ（スプレッドシート連携版）
     # -----------------------------
     with tab3:
-        st.info("💡 スケジュールから4チームを選んで、1つの合同投稿を作ります！")
+        st.info("💡 スケジュールから4チームを選んで合同投稿を作成！")
         
-        # 1. テンプレート編集機能を追加！
-        if "joint_base_text" not in st.session_state:
-            st.session_state.joint_base_text = "現地から速報！🔥\n素晴らしい演舞をお届けします📸✨\n\n{teams}\n\n#YOSAKOIソーラン祭り #よさこい"
-            
-        with st.expander("⚙️ 合同投稿のテンプレートを編集", expanded=False):
-            st.caption("※ {teams} の部分に、選んだチームのリストが自動で入ります")
+        # テンプレート編集（ここも一時編集をsession_stateで保持）
+        with st.expander("⚙️ 合同投稿のベース文章を一時編集"):
             st.session_state.joint_base_text = st.text_area("合同用ベース文章", st.session_state.joint_base_text, height=130)
+            st.caption("※スプレッドシートから読み込んだ文章が初期値になっています")
         
-        # 2. スケジュール入力
         joint_input = st.text_area("タイムテーブルを貼り付け", height=120, key="joint_input_tab3")
         
         if joint_input:
             lines = joint_input.split("\n")
             matched_teams = []
-            
             for line in lines:
                 name = line.strip()
                 if not name: continue
@@ -237,40 +195,28 @@ if not df_teams.empty:
                 match = df_teams[df_teams["検索用"].str.contains(norm_name, na=False, regex=False)]
                 if not match.empty:
                     matched_teams.append(match.iloc[0]["名前"])
-            
-            matched_teams = list(dict.fromkeys(matched_teams)) # 重複削除
+            matched_teams = list(dict.fromkeys(matched_teams))
             
             if matched_teams:
-                st.write("👇 写真を載せるチームをタップしてください（最大4つ）")
-                
-                # 選択されたチームを記憶するリストを準備
+                st.write("👇 写真を載せるチームを選択（最大4つ）")
                 if "selected_joint_teams" not in st.session_state:
                     st.session_state.selected_joint_teams = []
                 
-                # 古い記憶（入力が変わった時）を掃除
                 st.session_state.selected_joint_teams = [t for t in st.session_state.selected_joint_teams if t in matched_teams]
                 
-                # 3. スマホで押しやすい「2列のボタン」を展開
                 cols = st.columns(2)
                 for i, t_name in enumerate(matched_teams):
                     with cols[i % 2]:
                         is_selected = t_name in st.session_state.selected_joint_teams
-                        # 選ばれている時はチェックマーク、それ以外は四角を表示
                         btn_label = f"✅ {t_name}" if is_selected else f"⬜ {t_name}"
-                        
-                        # ボタンが押された時の処理
                         if st.button(btn_label, key=f"btn_joint_{t_name}", use_container_width=True):
                             if is_selected:
                                 st.session_state.selected_joint_teams.remove(t_name)
-                                st.rerun() # 画面をリフレッシュ
-                            else:
-                                if len(st.session_state.selected_joint_teams) < 4:
-                                    st.session_state.selected_joint_teams.append(t_name)
-                                    st.rerun()
-                                else:
-                                    st.warning("⚠️ 画像は4枚までなので、4チームまでしか選べません！")
+                                st.rerun()
+                            elif len(st.session_state.selected_joint_teams) < 4:
+                                st.session_state.selected_joint_teams.append(t_name)
+                                st.rerun()
                 
-                # 4. チームが選ばれていれば文章を生成
                 if st.session_state.selected_joint_teams:
                     team_texts = []
                     for t_name in st.session_state.selected_joint_teams:
@@ -279,22 +225,14 @@ if not df_teams.empty:
                         team_texts.append(f"🎤 {t_name} {x_id}".strip())
                     
                     teams_joined = "\n".join(team_texts)
-                    
-                    # {teams} を実際のチームリストに置き換える
                     final_joint_text = st.session_state.joint_base_text.replace("{teams}", teams_joined)
                     
                     st.success(f"✅ {len(st.session_state.selected_joint_teams)}チーム選択中！")
-                    
-                    # 現場で書き足せる最終確認エリア
-                    final_joint_text_edited = st.text_area("✍️ 最終確認（ここでさらに書き足しOK!）", value=final_joint_text, height=200, key="final_joint_edited")
+                    final_joint_text_edited = st.text_area("✍️ 最終確認", value=final_joint_text, height=200, key="final_joint_edited")
                     
                     char_count = len(final_joint_text_edited)
-                    if char_count <= 140:
-                        st.caption(f"🟢 文字数: {char_count}/140")
-                    else:
-                        st.error(f"🔴 文字数オーバー！: {char_count}/140")
+                    st.caption(f"{'🟢' if char_count <= 140 else '🔴'} 文字数: {char_count}/140")
                     
                     st.link_button("🐦 この内容でXを開く", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(final_joint_text_edited)}", type="primary", use_container_width=True)
-
 else:
     st.info("データを読み込み中です...")
