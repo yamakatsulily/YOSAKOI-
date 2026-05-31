@@ -38,7 +38,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 0. 文字のお掃除関数
+# 0. 文字のお掃除＆スキャナー関数
 # ==========================================
 def normalize_text(text):
     if not isinstance(text, str):
@@ -46,6 +46,37 @@ def normalize_text(text):
     text = text.lower()
     text = re.sub(r"[\s　\"”'’「」『』【】＆&()（）\-ー・!！〜~～]", "", text)
     return text
+
+# 🌟 新機能：ぐちゃぐちゃのテキストからチーム名だけを順番通りに抜き出す魔法の関数
+def extract_teams_from_blob(blob, df_teams):
+    if not blob: return []
+    norm_blob = normalize_text(blob)
+    found_teams = []
+    
+    for index, row in df_teams.iterrows():
+        t_name = row["名前"]
+        norm_team = normalize_text(t_name)
+        if not norm_team or len(norm_team) < 2:
+            continue # 誤爆を防ぐため極端に短い名前はスキップ
+            
+        # テキスト内のどこにチーム名が出現したか（位置）を記録
+        start = 0
+        while True:
+            pos = norm_blob.find(norm_team, start)
+            if pos == -1: break
+            found_teams.append((pos, t_name))
+            start = pos + len(norm_team)
+            
+    # 出現した順番（タイムテーブル順）に並び替え
+    found_teams.sort(key=lambda x: x[0])
+    
+    # 順番を保ったまま重複を削除してリスト化
+    result = []
+    for item in found_teams:
+        if item[1] not in result:
+            result.append(item[1])
+            
+    return result
 
 # ==========================================
 # 1. URL設定
@@ -64,7 +95,6 @@ def load_data(url):
         return pd.DataFrame()
 
 df_teams = load_data(TEAM_SHEET_URL).rename(columns={"チーム名": "名前", "ふりがな": "かな", "Xアカウント": "X", "インスタグラム": "インスタ", "ハッシュタグ": "タグ"})
-# スプレッドシートに「合同用」列がある前提で読み込み
 df_templates = load_data(TEMPLATE_SHEET_URL).rename(columns={"行事名": "イベント名", "Twitter用": "X用", "Instagram用": "インスタ用", "合同用": "合同用"})
 
 if not df_teams.empty:
@@ -83,17 +113,14 @@ with st.sidebar:
         
         target_event = st.selectbox("🎪 イベントを選択", event_names, index=event_names.index(st.session_state.selected_event))
 
-        # イベント切り替え時にシートからテンプレートを読み込む
         if "last_loaded_event" not in st.session_state or st.session_state.last_loaded_event != target_event:
             row = df_templates[df_templates["イベント名"] == target_event].iloc[0]
             st.session_state.editing_x = row["X用"]
             st.session_state.editing_i = row["インスタ用"]
             
-            # 【重要】合同用のテンプレートをシートから読み込み
             if "合同用" in row and row["合同用"]:
                 st.session_state.joint_base_text = row["合同用"]
             else:
-                # シートにない場合のデフォルト
                 st.session_state.joint_base_text = "現地から速報！🔥\n{teams}\n\n#YOSAKOIソーラン祭り"
                 
             st.session_state.last_loaded_event = target_event
@@ -124,13 +151,16 @@ st.markdown("<p class='custom-subtitle'>SNS POSTING ASSISTANT</p>", unsafe_allow
 if not df_teams.empty:
     tab1, tab2, tab3 = st.tabs(["🔍 1件ずつ", "🗓 一括生成", "📸 合同ピックアップ"])
 
-    # タブ1, 2 は以前と同じ（中略）
+    # -----------------------------
+    # タブ1: 1件ずつ検索
+    # -----------------------------
     with tab1:
         col_search, col_part = st.columns([3, 1])
         with col_search:
             query = st.text_input("チーム名検索", placeholder="ひらぎし、科学大など")
         with col_part:
             part_num = st.text_input("part", value="1", key="single_part")
+            
         if query:
             norm_q = normalize_text(query)
             results = df_teams[df_teams["検索用"].str.contains(norm_q, na=False, regex=False)]
@@ -152,33 +182,42 @@ if not df_teams.empty:
                 except: st.error("テンプレートを確認してください")
             else: st.warning("見つかりません")
 
+    # -----------------------------
+    # タブ2: 一括生成（スキャナー対応！）
+    # -----------------------------
     with tab2:
-        bulk_input = st.text_area("チーム名リスト", height=150, key="bulk_input_tab2")
+        st.info("💡 タイムテーブルをそのまま貼り付けても、チーム名だけを自動で抜き出します！")
+        bulk_input = st.text_area("テキストを貼り付け", height=150, key="bulk_input_tab2")
         bulk_part = st.text_input("一括用part", value="1", key="bulk_part")
+        
         if st.button("一括生成", type="primary", use_container_width=True):
-            lines = bulk_input.split("\n")
-            for line in lines:
-                name = line.strip()
-                if not name: continue
-                norm_name = normalize_text(name)
-                match = df_teams[df_teams["検索用"].str.contains(norm_name, na=False, regex=False)]
-                if not match.empty:
-                    r = match.iloc[0]
-                    x_r = r['X'] if r['X'] not in ["(確認できず)", "nan", ""] else ""
-                    i_r = r['インスタ'] if r['インスタ'] not in ["(確認できず)", "nan", ""] else ""
-                    f_x = st.session_state.editing_x.format(名前=r['名前'], X=x_r, インスタ=i_r, タグ=r['タグ'], part=bulk_part)
-                    f_i = st.session_state.editing_i.format(名前=r['名前'], X=x_r, インスタ=i_r, タグ=r['タグ'], part=bulk_part)
-                    with st.expander(f"✅ {r['名前']}"):
-                        st.code(f_x, language="text")
-                        st.link_button("🐦 X投稿", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(f_x)}", type="primary")
+            # 🌟 ここで新機能のスキャナーが発動
+            matched_teams = extract_teams_from_blob(bulk_input, df_teams)
+            
+            if matched_teams:
+                st.success(f"✅ {len(matched_teams)}チームを抽出しました！")
+                for t_name in matched_teams:
+                    row = df_teams[df_teams["名前"] == t_name].iloc[0]
+                    x_r = row['X'] if row['X'] not in ["(確認できず)", "nan", ""] else ""
+                    i_r = row['インスタ'] if row['インスタ'] not in ["(確認できず)", "nan", ""] else ""
+                    try:
+                        f_x = st.session_state.editing_x.format(名前=row['名前'], X=x_r, インスタ=i_r, タグ=row['タグ'], part=bulk_part)
+                        f_i = st.session_state.editing_i.format(名前=row['名前'], X=x_r, インスタ=i_r, タグ=row['タグ'], part=bulk_part)
+                        with st.expander(f"✅ {row['名前']}"):
+                            st.code(f_x, language="text")
+                            st.link_button("🐦 X投稿", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(f_x)}", type="primary")
+                    except Exception as e:
+                        st.error(f"⚠️ {row['名前']}の生成エラー")
+            else:
+                if bulk_input:
+                    st.error("❌ テキストの中に、名簿に登録されているチーム名が見つかりませんでした。")
 
     # -----------------------------
-    # 🌟 合同ピックアップ（スプレッドシート連携版）
+    # タブ3: 合同ピックアップ（スキャナー対応！）
     # -----------------------------
     with tab3:
         st.info("💡 スケジュールから4チームを選んで合同投稿を作成！")
         
-        # テンプレート編集（ここも一時編集をsession_stateで保持）
         with st.expander("⚙️ 合同投稿のベース文章を一時編集"):
             st.session_state.joint_base_text = st.text_area("合同用ベース文章", st.session_state.joint_base_text, height=130)
             st.caption("※スプレッドシートから読み込んだ文章が初期値になっています")
@@ -186,22 +225,15 @@ if not df_teams.empty:
         joint_input = st.text_area("タイムテーブルを貼り付け", height=120, key="joint_input_tab3")
         
         if joint_input:
-            lines = joint_input.split("\n")
-            matched_teams = []
-            for line in lines:
-                name = line.strip()
-                if not name: continue
-                norm_name = normalize_text(name)
-                match = df_teams[df_teams["検索用"].str.contains(norm_name, na=False, regex=False)]
-                if not match.empty:
-                    matched_teams.append(match.iloc[0]["名前"])
-            matched_teams = list(dict.fromkeys(matched_teams))
+            # 🌟 ここでもスキャナーが発動
+            matched_teams = extract_teams_from_blob(joint_input, df_teams)
             
             if matched_teams:
                 st.write("👇 写真を載せるチームを選択（最大4つ）")
                 if "selected_joint_teams" not in st.session_state:
                     st.session_state.selected_joint_teams = []
                 
+                # 選ばれていたチームが新しい入力に無ければリストから消す
                 st.session_state.selected_joint_teams = [t for t in st.session_state.selected_joint_teams if t in matched_teams]
                 
                 cols = st.columns(2)
@@ -234,5 +266,8 @@ if not df_teams.empty:
                     st.caption(f"{'🟢' if char_count <= 140 else '🔴'} 文字数: {char_count}/140")
                     
                     st.link_button("🐦 この内容でXを開く", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(final_joint_text_edited)}", type="primary", use_container_width=True)
+            else:
+                st.error("❌ テキストの中にチーム名が見つかりませんでした。")
+
 else:
     st.info("データを読み込み中です...")
