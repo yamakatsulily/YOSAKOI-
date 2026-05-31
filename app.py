@@ -7,54 +7,61 @@ import unicodedata
 st.set_page_config(page_title="YOSAKOI現地投稿くん", layout="centered", initial_sidebar_state="expanded")
 
 # ==========================================
-# 🎨 スマホアプリ風デザイン（CSS）
+# 🎨 デザイン・CSS
 # ==========================================
 st.markdown("""
 <style>
     .block-container { padding-top: 4.5rem; padding-bottom: 2rem; }
     div.stButton > button { border-radius: 8px; font-weight: bold; }
-    .custom-title { text-align: center; font-size: 1.8rem; font-weight: 800; margin-bottom: 0px; color: #333; line-height: 1.2; }
-    .custom-subtitle { text-align: center; font-size: 0.8rem; color: #666; margin-top: 0px; margin-bottom: 20px; letter-spacing: 1px; }
+    .custom-title { text-align: center; font-size: 1.8rem; font-weight: 800; color: #333; line-height: 1.2; }
+    .custom-subtitle { text-align: center; font-size: 0.8rem; color: #666; margin-bottom: 20px; letter-spacing: 1px; }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 0. 文字のお掃除＆超強力スキャナー関数
+# 0. 超強力スキャナー関数
 # ==========================================
 def normalize_text(text):
     if not isinstance(text, str): return ""
     text = unicodedata.normalize('NFKC', text)
     text = text.lower()
+    # 異体字対策
     text = text.replace("櫻", "桜").replace("樂", "楽").replace("眞", "真").replace("邊", "辺").replace("澤", "沢").replace("濱", "浜")
-    text = re.sub(r"[\s　\"”'’「」『』【】＆&()（）\-ー・!！〜~～_＿=＝—]", "", text)
     return text
 
 def extract_teams_from_blob(blob, df_teams):
     if not blob: return []
-    norm_blob = normalize_text(blob)
+    # 記号を完全に無視して「文字と数字のみ」を抽出
+    norm_blob = re.sub(r'[^a-z0-9\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]', '', normalize_text(blob))
     found_teams = []
     
     for index, row in df_teams.iterrows():
         t_name = row["名前"]
         norm_team = normalize_text(t_name)
-        if not norm_team: continue
-            
-        # チーム名から英語・数字を抜いた漢字メインのコア部分
-        core_team = re.sub(r"[a-z0-9]", "", norm_team)
+        # 記号を排除した純粋な名前
+        clean_team = re.sub(r'[^a-z0-9\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]', '', norm_team)
         
-        # 1. 完全名、2. 漢字コア名 の両方で探す
-        for target in [norm_team, core_team]:
-            if len(target) < 2: continue
-            pos = norm_blob.find(target)
-            if pos != -1:
-                found_teams.append((pos, t_name))
-                break # 1つ見つかればOK
+        if len(clean_team) < 2: continue
+        
+        # 検索
+        if norm_blob.find(clean_team) != -1:
+            found_teams.append((norm_blob.find(clean_team), t_name))
+        else:
+            # 漢字コア部分だけで再検索
+            core_team = re.sub(r"[a-z0-9]", "", clean_team)
+            if len(core_team) >= 2:
+                pos = norm_blob.find(core_team)
+                if pos != -1: found_teams.append((pos, t_name))
                     
     found_teams.sort(key=lambda x: x[0])
-    return [item[1] for item in found_teams]
+    # 重複削除
+    result = []
+    for item in found_teams:
+        if item[1] not in result: result.append(item[1])
+    return result
 
 # ==========================================
-# 1. URL設定
+# 1. データ読み込み設定
 # ==========================================
 TEAM_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR4oPDAGy6lDROLhiBEhDKLNEI-b82ghaBNr3yli5uVZbizgZmSo2Gidv0HjuZbWXnX5-yo0TJMmM99/pub?gid=0&single=true&output=csv"
 TEMPLATE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR4oPDAGy6lDROLhiBEhDKLNEI-b82ghaBNr3yli5uVZbizgZmSo2Gidv0HjuZbWXnX5-yo0TJMmM99/pub?gid=2050053305&single=true&output=csv"
@@ -102,7 +109,6 @@ if not df_teams.empty:
         query = st.text_input("チーム名検索")
         if query:
             norm_q = normalize_text(query)
-            # 名簿の名前をすべて正規化して比較
             results = df_teams[df_teams["名前"].apply(normalize_text).str.contains(norm_q, na=False)]
             if not results.empty:
                 selected = st.selectbox("チーム確定", results["名前"].tolist())
@@ -135,7 +141,7 @@ if not df_teams.empty:
             for i, t_name in enumerate(matched_teams):
                 with cols[i % 2]:
                     is_sel = t_name in st.session_state.selected_joint_teams
-                    if st.button(f"{'✅' if is_sel else '⬜'} {t_name}", key=f"b_{t_name}", use_container_width=True):
+                    if st.button(f"{'✅' if is_sel else '⬜'} {t_name}", key=f"btn_{t_name}", use_container_width=True):
                         if is_sel: st.session_state.selected_joint_teams.remove(t_name)
                         elif len(st.session_state.selected_joint_teams) < 4: st.session_state.selected_joint_teams.append(t_name)
                         st.rerun()
