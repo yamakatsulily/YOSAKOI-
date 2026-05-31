@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import urllib.parse
 import re
+import unicodedata # ★全角半角の統一用
 
 st.set_page_config(page_title="YOSAKOI現地投稿くん", layout="centered", initial_sidebar_state="expanded")
 
@@ -38,16 +39,17 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 0. 文字のお掃除＆スキャナー関数
+# 0. 文字のお掃除＆超強力スキャナー関数
 # ==========================================
 def normalize_text(text):
     if not isinstance(text, str):
         return ""
+    text = unicodedata.normalize('NFKC', text)
     text = text.lower()
-    text = re.sub(r"[\s　\"”'’「」『』【】＆&()（）\-ー・!！〜~～]", "", text)
+    text = text.replace("櫻", "桜").replace("樂", "楽").replace("眞", "真").replace("邊", "辺").replace("澤", "沢").replace("濱", "浜")
+    text = re.sub(r"[\s　\"”'’「」『』【】＆&()（）\-ー・!！〜~～_＿=＝—]", "", text)
     return text
 
-# 🌟 新機能：ぐちゃぐちゃのテキストからチーム名だけを順番通りに抜き出す魔法の関数
 def extract_teams_from_blob(blob, df_teams):
     if not blob: return []
     norm_blob = normalize_text(blob)
@@ -56,21 +58,30 @@ def extract_teams_from_blob(blob, df_teams):
     for index, row in df_teams.iterrows():
         t_name = row["名前"]
         norm_team = normalize_text(t_name)
-        if not norm_team or len(norm_team) < 2:
-            continue # 誤爆を防ぐため極端に短い名前はスキップ
+        
+        if not norm_team: continue
             
-        # テキスト内のどこにチーム名が出現したか（位置）を記録
         start = 0
+        found_any = False
         while True:
             pos = norm_blob.find(norm_team, start)
             if pos == -1: break
             found_teams.append((pos, t_name))
             start = pos + len(norm_team)
+            found_any = True
             
-    # 出現した順番（タイムテーブル順）に並び替え
+        if not found_any:
+            core_team = re.sub(r"[a-z0-9]", "", norm_team)
+            if len(core_team) >= 2 and core_team != norm_team:
+                start = 0
+                while True:
+                    pos = norm_blob.find(core_team, start)
+                    if pos == -1: break
+                    found_teams.append((pos, t_name))
+                    start = pos + len(core_team)
+                    
     found_teams.sort(key=lambda x: x[0])
     
-    # 順番を保ったまま重複を削除してリスト化
     result = []
     for item in found_teams:
         if item[1] not in result:
@@ -183,7 +194,7 @@ if not df_teams.empty:
             else: st.warning("見つかりません")
 
     # -----------------------------
-    # タブ2: 一括生成（スキャナー対応！）
+    # タブ2: 一括生成（超強力スキャナー版）
     # -----------------------------
     with tab2:
         st.info("💡 タイムテーブルをそのまま貼り付けても、チーム名だけを自動で抜き出します！")
@@ -191,7 +202,6 @@ if not df_teams.empty:
         bulk_part = st.text_input("一括用part", value="1", key="bulk_part")
         
         if st.button("一括生成", type="primary", use_container_width=True):
-            # 🌟 ここで新機能のスキャナーが発動
             matched_teams = extract_teams_from_blob(bulk_input, df_teams)
             
             if matched_teams:
@@ -213,7 +223,7 @@ if not df_teams.empty:
                     st.error("❌ テキストの中に、名簿に登録されているチーム名が見つかりませんでした。")
 
     # -----------------------------
-    # タブ3: 合同ピックアップ（スキャナー対応！）
+    # タブ3: 合同ピックアップ（ボタン完備＆超強力スキャナー版）
     # -----------------------------
     with tab3:
         st.info("💡 スケジュールから4チームを選んで合同投稿を作成！")
@@ -224,50 +234,58 @@ if not df_teams.empty:
         
         joint_input = st.text_area("タイムテーブルを貼り付け", height=120, key="joint_input_tab3")
         
-        if joint_input:
-            # 🌟 ここでもスキャナーが発動
-            matched_teams = extract_teams_from_blob(joint_input, df_teams)
-            
-            if matched_teams:
-                st.write("👇 写真を載せるチームを選択（最大4つ）")
-                if "selected_joint_teams" not in st.session_state:
-                    st.session_state.selected_joint_teams = []
-                
-                # 選ばれていたチームが新しい入力に無ければリストから消す
-                st.session_state.selected_joint_teams = [t for t in st.session_state.selected_joint_teams if t in matched_teams]
-                
-                cols = st.columns(2)
-                for i, t_name in enumerate(matched_teams):
-                    with cols[i % 2]:
-                        is_selected = t_name in st.session_state.selected_joint_teams
-                        btn_label = f"✅ {t_name}" if is_selected else f"⬜ {t_name}"
-                        if st.button(btn_label, key=f"btn_joint_{t_name}", use_container_width=True):
-                            if is_selected:
-                                st.session_state.selected_joint_teams.remove(t_name)
-                                st.rerun()
-                            elif len(st.session_state.selected_joint_teams) < 4:
-                                st.session_state.selected_joint_teams.append(t_name)
-                                st.rerun()
-                
-                if st.session_state.selected_joint_teams:
-                    team_texts = []
-                    for t_name in st.session_state.selected_joint_teams:
-                        row = df_teams[df_teams["名前"] == t_name].iloc[0]
-                        x_id = row['X'] if row['X'] not in ["(確認できず)", "nan", ""] else ""
-                        team_texts.append(f"🎤 {t_name} {x_id}".strip())
-                    
-                    teams_joined = "\n".join(team_texts)
-                    final_joint_text = st.session_state.joint_base_text.replace("{teams}", teams_joined)
-                    
-                    st.success(f"✅ {len(st.session_state.selected_joint_teams)}チーム選択中！")
-                    final_joint_text_edited = st.text_area("✍️ 最終確認", value=final_joint_text, height=200, key="final_joint_edited")
-                    
-                    char_count = len(final_joint_text_edited)
-                    st.caption(f"{'🟢' if char_count <= 140 else '🔴'} 文字数: {char_count}/140")
-                    
-                    st.link_button("🐦 この内容でXを開く", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(final_joint_text_edited)}", type="primary", use_container_width=True)
+        # 🌟 ここに「抽出する」ボタンを新設し、スマホの入力問題を完全解決！
+        if st.button("🔍 チームを抽出する", type="primary", use_container_width=True, key="btn_extract_tab3"):
+            if joint_input:
+                extracted = extract_teams_from_blob(joint_input, df_teams)
+                if extracted:
+                    st.session_state.joint_extracted_teams = extracted
+                    st.session_state.selected_joint_teams = [] # 新しく抽出した時は選択をリセット
+                else:
+                    st.error("❌ テキストの中にチーム名が見つかりませんでした。")
+                    st.session_state.joint_extracted_teams = []
             else:
-                st.error("❌ テキストの中にチーム名が見つかりませんでした。")
+                st.warning("⚠️ タイムテーブルを貼り付けてからボタンを押してください。")
+        
+        # 抽出成功したチームが記憶されていれば、ボタンを表示
+        if "joint_extracted_teams" in st.session_state and st.session_state.joint_extracted_teams:
+            matched_teams = st.session_state.joint_extracted_teams
+            st.write("👇 写真を載せるチームを選択（最大4つ）")
+            
+            if "selected_joint_teams" not in st.session_state:
+                st.session_state.selected_joint_teams = []
+            
+            cols = st.columns(2)
+            for i, t_name in enumerate(matched_teams):
+                with cols[i % 2]:
+                    is_selected = t_name in st.session_state.selected_joint_teams
+                    btn_label = f"✅ {t_name}" if is_selected else f"⬜ {t_name}"
+                    
+                    if st.button(btn_label, key=f"btn_joint_{t_name}", use_container_width=True):
+                        if is_selected:
+                            st.session_state.selected_joint_teams.remove(t_name)
+                            st.rerun()
+                        elif len(st.session_state.selected_joint_teams) < 4:
+                            st.session_state.selected_joint_teams.append(t_name)
+                            st.rerun()
+            
+            if st.session_state.selected_joint_teams:
+                team_texts = []
+                for t_name in st.session_state.selected_joint_teams:
+                    row = df_teams[df_teams["名前"] == t_name].iloc[0]
+                    x_id = row['X'] if row['X'] not in ["(確認できず)", "nan", ""] else ""
+                    team_texts.append(f"🎤 {t_name} {x_id}".strip())
+                
+                teams_joined = "\n".join(team_texts)
+                final_joint_text = st.session_state.joint_base_text.replace("{teams}", teams_joined)
+                
+                st.success(f"✅ {len(st.session_state.selected_joint_teams)}チーム選択中！")
+                final_joint_text_edited = st.text_area("✍️ 最終確認", value=final_joint_text, height=200, key="final_joint_edited")
+                
+                char_count = len(final_joint_text_edited)
+                st.caption(f"{'🟢' if char_count <= 140 else '🔴'} 文字数: {char_count}/140")
+                
+                st.link_button("🐦 この内容でXを開く", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(final_joint_text_edited)}", type="primary", use_container_width=True)
 
 else:
     st.info("データを読み込み中です...")
