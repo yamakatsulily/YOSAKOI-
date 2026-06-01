@@ -67,16 +67,30 @@ if not df_teams.empty:
 # ==========================================
 with st.sidebar:
     st.header("⚙️ 投稿設定")
+    
     if not df_templates.empty:
         event_names = df_templates["イベント名"].tolist()
         if "selected_event" not in st.session_state: st.session_state.selected_event = event_names[0]
         target_event = st.selectbox("🎪 イベントを選択", event_names, index=event_names.index(st.session_state.selected_event))
+        
         if "last_loaded_event" not in st.session_state or st.session_state.last_loaded_event != target_event:
             row = df_templates[df_templates["イベント名"] == target_event].iloc[0]
             st.session_state.editing_x = row["X用"]
             st.session_state.editing_i = row["インスタ用"]
-            st.session_state.joint_base_text = row["合同用"] if "合同用" in row and row["合同用"] else "現地から速報！🔥\n{teams}\n\n#YOSAKOIソーラン祭り"
+            st.session_state.joint_base_text = row["合同用"] if "合同用" in row.index and row["合同用"] else "🗓️{日付}\n🎪{会場} より速報！🔥\n\n{teams}\n\n#{イベント名}"
+            
+            # 🌟 スプレッドシートから日付と会場を読み込んで記憶
+            st.session_state.default_date = row["日付"] if "日付" in row.index else ""
+            st.session_state.default_venue = row["会場"] if "会場" in row.index else ""
+            
             st.session_state.last_loaded_event = target_event
+
+        st.write("📅 撮影データ情報")
+        st.caption("※ スプレッドシートの設定が自動で入っています")
+        target_date = st.text_input("🗓 演舞日", value=st.session_state.default_date)
+        target_venue = st.text_input("🎪 会場", value=st.session_state.default_venue)
+        st.divider()
+
         st.write("📝 ベース文章の微調整")
         st.session_state.editing_x = st.text_area("🐦 X用ベース", st.session_state.editing_x, height=120)
         st.session_state.editing_i = st.text_area("📸 インスタ用ベース", st.session_state.editing_i, height=120)
@@ -90,7 +104,7 @@ st.markdown("<p class='custom-subtitle'>SNS POSTING ASSISTANT</p>", unsafe_allow
 if not df_teams.empty:
     tab1, tab2, tab3 = st.tabs(["🔍 1件ずつ", "🗓 一括生成", "📸 合同ピックアップ"])
 
-    # --- タブ1: 1件ずつ（自動生成＆文字数チェッカー復活！） ---
+    # --- タブ1: 1件ずつ ---
     with tab1:
         col_search, col_part = st.columns([3, 1])
         with col_search:
@@ -105,26 +119,26 @@ if not df_teams.empty:
                 selected = st.selectbox("チーム確定", results["名前"].tolist())
                 row = df_teams[df_teams["名前"] == selected].iloc[0]
                 
-                # 自動生成
-                res_x = st.session_state.editing_x.format(名前=row['名前'], X=row['X'], インスタ=row['インスタ'], タグ=row['タグ'], part=part_num)
-                res_i = st.session_state.editing_i.format(名前=row['名前'], X=row['X'], インスタ=row['インスタ'], タグ=row['タグ'], part=part_num)
-                
-                t_x, t_i = st.tabs(["🐦 X (Twitter)", "📸 Instagram"])
-                
-                with t_x:
-                    char_count = len(res_x)
-                    if char_count <= 140:
-                        st.caption(f"🟢 文字数: {char_count}/140")
-                    else:
-                        st.error(f"🔴 文字数オーバー！: {char_count}/140")
-                    st.code(res_x, language="text")
-                    st.link_button("🐦 Xで開く", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(res_x)}", type="primary", use_container_width=True)
+                # 自動生成（イベント名を追加！）
+                try:
+                    res_x = st.session_state.editing_x.format(名前=row['名前'], X=row['X'], インスタ=row['インスタ'], タグ=row['タグ'], part=part_num, 日付=target_date, 会場=target_venue, イベント名=target_event)
+                    res_i = st.session_state.editing_i.format(名前=row['名前'], X=row['X'], インスタ=row['インスタ'], タグ=row['タグ'], part=part_num, 日付=target_date, 会場=target_venue, イベント名=target_event)
                     
-                with t_i:
-                    st.code(res_i, language="text")
-                    st.link_button("📸 インスタを開く（※上の文章をコピーしてから押してね）", "https://www.instagram.com/", use_container_width=True)
+                    t_x, t_i = st.tabs(["🐦 X (Twitter)", "📸 Instagram"])
+                    
+                    with t_x:
+                        char_count = len(res_x)
+                        st.caption(f"{'🟢' if char_count <= 140 else '🔴'} 文字数: {char_count}/140")
+                        st.code(res_x, language="text")
+                        st.link_button("🐦 Xで開く", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(res_x)}", type="primary", use_container_width=True)
+                        
+                    with t_i:
+                        st.code(res_i, language="text")
+                        st.link_button("📸 インスタを開く（※コピーしてから押してね）", "https://www.instagram.com/", use_container_width=True)
+                except KeyError as e:
+                    st.error(f"⚠️ テンプレートエラー: 登録されていない {e} が含まれています。")
 
-    # --- タブ2: 一括生成（文字数チェッカー復活！） ---
+    # --- タブ2: 一括生成 ---
     with tab2:
         bulk_input = st.text_area("テキストを貼り付け", height=150)
         bulk_part = st.text_input("一括用part", value="1", key="bulk_part")
@@ -132,20 +146,23 @@ if not df_teams.empty:
             matched = extract_teams_from_blob(bulk_input, df_teams)
             for t_name in matched:
                 row = df_teams[df_teams["名前"] == t_name].iloc[0]
-                f_x = st.session_state.editing_x.format(名前=row['名前'], X=row['X'], インスタ=row['インスタ'], タグ=row['タグ'], part=bulk_part)
-                f_i = st.session_state.editing_i.format(名前=row['名前'], X=row['X'], インスタ=row['インスタ'], タグ=row['タグ'], part=bulk_part)
-                
-                with st.expander(f"✅ {row['名前']}"):
-                    st.write("**🐦 X用**")
-                    char_count = len(f_x)
-                    st.caption(f"{'🟢' if char_count <= 140 else '🔴'} 文字数: {char_count}/140")
-                    st.code(f_x, language="text")
-                    st.link_button("🐦 X投稿", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(f_x)}", type="primary")
-                    st.write("---")
-                    st.write("**📸 インスタ用**")
-                    st.code(f_i, language="text")
+                try:
+                    f_x = st.session_state.editing_x.format(名前=row['名前'], X=row['X'], インスタ=row['インスタ'], タグ=row['タグ'], part=bulk_part, 日付=target_date, 会場=target_venue, イベント名=target_event)
+                    f_i = st.session_state.editing_i.format(名前=row['名前'], X=row['X'], インスタ=row['インスタ'], タグ=row['タグ'], part=bulk_part, 日付=target_date, 会場=target_venue, イベント名=target_event)
+                    
+                    with st.expander(f"✅ {row['名前']}"):
+                        st.write("**🐦 X用**")
+                        char_count = len(f_x)
+                        st.caption(f"{'🟢' if char_count <= 140 else '🔴'} 文字数: {char_count}/140")
+                        st.code(f_x, language="text")
+                        st.link_button("🐦 X投稿", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(f_x)}", type="primary")
+                        st.write("---")
+                        st.write("**📸 インスタ用**")
+                        st.code(f_i, language="text")
+                except Exception as e:
+                    st.error(f"⚠️ {row['名前']}の生成エラー")
 
-    # --- タブ3: 合同ピックアップ（文字数チェッカー復活！） ---
+    # --- タブ3: 合同ピックアップ ---
     with tab3:
         joint_input = st.text_area("タイムテーブルを貼り付け", height=120)
         if st.button("🔍 チームを抽出する", type="primary", use_container_width=True):
@@ -166,14 +183,12 @@ if not df_teams.empty:
             
             if st.session_state.selected_joint_teams:
                 teams_text = "\n".join([f"🎤 {t}" for t in st.session_state.selected_joint_teams])
-                final_text = st.session_state.joint_base_text.replace("{teams}", teams_text)
+                # 合同用にも日付、会場、イベント名を反映
+                final_text = st.session_state.joint_base_text.replace("{teams}", teams_text).replace("{日付}", target_date).replace("{会場}", target_venue).replace("{イベント名}", target_event)
                 final_text = st.text_area("✍️ 最終確認", value=final_text, height=200)
                 
                 char_count = len(final_text)
-                if char_count <= 140:
-                    st.caption(f"🟢 文字数: {char_count}/140")
-                else:
-                    st.error(f"🔴 文字数オーバー！: {char_count}/140")
+                st.caption(f"{'🟢' if char_count <= 140 else '🔴'} 文字数: {char_count}/140")
                     
                 st.link_button("🐦 Xを開く", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(final_text)}", type="primary", use_container_width=True)
 
