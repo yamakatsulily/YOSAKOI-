@@ -19,49 +19,34 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 0. 超強力スキャナー関数
+# 0. 共通関数
 # ==========================================
 def normalize_text(text):
     if not isinstance(text, str): return ""
-    text = unicodedata.normalize('NFKC', text)
-    text = text.lower()
-    # 異体字対策
-    text = text.replace("櫻", "桜").replace("樂", "楽").replace("眞", "真").replace("邊", "辺").replace("澤", "沢").replace("濱", "浜")
-    return text
+    text = unicodedata.normalize('NFKC', text).lower()
+    return text.replace("櫻", "桜").replace("樂", "楽").replace("眞", "真").replace("邊", "辺").replace("澤", "沢").replace("濱", "浜")
 
 def extract_teams_from_blob(blob, df_teams):
     if not blob: return []
-    # 記号を完全に無視して「文字と数字のみ」を抽出
     norm_blob = re.sub(r'[^a-z0-9\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]', '', normalize_text(blob))
     found_teams = []
-    
     for index, row in df_teams.iterrows():
         t_name = row["名前"]
         norm_team = normalize_text(t_name)
-        # 記号を排除した純粋な名前
         clean_team = re.sub(r'[^a-z0-9\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]', '', norm_team)
-        
         if len(clean_team) < 2: continue
-        
-        # 検索
-        if norm_blob.find(clean_team) != -1:
-            found_teams.append((norm_blob.find(clean_team), t_name))
+        if norm_blob.find(clean_team) != -1: found_teams.append((norm_blob.find(clean_team), t_name))
         else:
-            # 漢字コア部分だけで再検索
             core_team = re.sub(r"[a-z0-9]", "", clean_team)
-            if len(core_team) >= 2:
-                pos = norm_blob.find(core_team)
-                if pos != -1: found_teams.append((pos, t_name))
-                    
+            if len(core_team) >= 2 and norm_blob.find(core_team) != -1: found_teams.append((norm_blob.find(core_team), t_name))
     found_teams.sort(key=lambda x: x[0])
-    # 重複削除
     result = []
     for item in found_teams:
         if item[1] not in result: result.append(item[1])
     return result
 
 # ==========================================
-# 1. データ読み込み設定
+# 1. データ読み込み
 # ==========================================
 TEAM_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR4oPDAGy6lDROLhiBEhDKLNEI-b82ghaBNr3yli5uVZbizgZmSo2Gidv0HjuZbWXnX5-yo0TJMmM99/pub?gid=0&single=true&output=csv"
 TEMPLATE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR4oPDAGy6lDROLhiBEhDKLNEI-b82ghaBNr3yli5uVZbizgZmSo2Gidv0HjuZbWXnX5-yo0TJMmM99/pub?gid=2050053305&single=true&output=csv"
@@ -75,8 +60,12 @@ df_teams = load_data(TEAM_SHEET_URL).rename(columns={"チーム名": "名前", "
 df_templates = load_data(TEMPLATE_SHEET_URL).rename(columns={"行事名": "イベント名", "Twitter用": "X用", "Instagram用": "インスタ用", "合同用": "合同用"})
 
 # ==========================================
-# 2. サイドバー
+# 2. UI構築
 # ==========================================
+st.markdown("<p class='custom-title'>🎤 YOSAKOI現地投稿くん</p>", unsafe_allow_html=True)
+st.markdown("<p class='custom-subtitle'>SNS POSTING ASSISTANT</p>", unsafe_allow_html=True)
+
+# サイドバー処理（略）
 with st.sidebar:
     st.header("⚙️ 投稿設定")
     if not df_templates.empty:
@@ -90,64 +79,53 @@ with st.sidebar:
             st.session_state.joint_base_text = row["合同用"] if "合同用" in row and row["合同用"] else "現地から速報！🔥\n{teams}\n\n#YOSAKOIソーラン祭り"
             st.session_state.last_loaded_event = target_event
         st.write("📝 ベース文章の微調整")
-        st.session_state.editing_x = st.text_area("🐦 X用ベース", st.session_state.editing_x, height=150)
-        st.session_state.editing_i = st.text_area("📸 インスタ用ベース", st.session_state.editing_i, height=150)
-        if st.button("🔄 リセット", use_container_width=True):
-            del st.session_state.last_loaded_event
-            st.rerun()
+        st.session_state.editing_x = st.text_area("🐦 X用ベース", st.session_state.editing_x, height=120)
+        st.session_state.editing_i = st.text_area("📸 インスタ用ベース", st.session_state.editing_i, height=120)
 
-# ==========================================
-# 3. メイン画面
-# ==========================================
-st.markdown("<p class='custom-title'>🎤 YOSAKOI現地投稿くん</p>", unsafe_allow_html=True)
-st.markdown("<p class='custom-subtitle'>SNS POSTING ASSISTANT</p>", unsafe_allow_html=True)
+tab1, tab2, tab3 = st.tabs(["🔍 1件ずつ", "🗓 一括生成", "📸 合同ピックアップ"])
 
-if not df_teams.empty:
-    tab1, tab2, tab3 = st.tabs(["🔍 1件ずつ", "🗓 一括生成", "📸 合同ピックアップ"])
-
-    with tab1:
-        query = st.text_input("チーム名検索")
-        if query:
-            norm_q = normalize_text(query)
-            results = df_teams[df_teams["名前"].apply(normalize_text).str.contains(norm_q, na=False)]
-            if not results.empty:
-                selected = st.selectbox("チーム確定", results["名前"].tolist())
+with tab1:
+    query = st.text_input("チーム名検索", placeholder="ひらぎし、科学大など")
+    if query:
+        norm_q = normalize_text(query)
+        results = df_teams[df_teams["名前"].apply(normalize_text).str.contains(norm_q, na=False)]
+        if not results.empty:
+            selected = st.selectbox("候補から選択", results["名前"].tolist())
+            part_num = st.text_input("part番号", value="1")
+            # ★ここが復活しました！
+            if st.button("🚀 文章を生成する", type="primary", use_container_width=True):
                 row = df_teams[df_teams["名前"] == selected].iloc[0]
-                res_x = st.session_state.editing_x.format(名前=row['名前'], X=row['X'], インスタ=row['インスタ'], タグ=row['タグ'], part="1")
+                res_x = st.session_state.editing_x.format(名前=row['名前'], X=row['X'], インスタ=row['インスタ'], タグ=row['タグ'], part=part_num)
                 st.code(res_x)
-                st.link_button("🐦 Xで開く", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(res_x)}", type="primary", use_container_width=True)
+                st.link_button("🐦 Xで投稿画面を開く", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(res_x)}", type="primary", use_container_width=True)
 
-    with tab2:
-        bulk_input = st.text_area("テキストを貼り付け", height=150)
-        if st.button("一括生成", type="primary", use_container_width=True):
-            matched = extract_teams_from_blob(bulk_input, df_teams)
-            for t_name in matched:
-                row = df_teams[df_teams["名前"] == t_name].iloc[0]
-                f_x = st.session_state.editing_x.format(名前=row['名前'], X=row['X'], インスタ=row['インスタ'], タグ=row['タグ'], part="1")
-                with st.expander(f"✅ {row['名前']}"):
-                    st.code(f_x)
-                    st.link_button("🐦 投稿", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(f_x)}", type="primary")
+with tab2:
+    bulk_input = st.text_area("テキストを貼り付け", height=150)
+    bulk_part = st.text_input("一括用part", value="1")
+    if st.button("一括生成", type="primary", use_container_width=True):
+        for t_name in extract_teams_from_blob(bulk_input, df_teams):
+            row = df_teams[df_teams["名前"] == t_name].iloc[0]
+            f_x = st.session_state.editing_x.format(名前=row['名前'], X=row['X'], インスタ=row['インスタ'], タグ=row['タグ'], part=bulk_part)
+            with st.expander(f"✅ {row['名前']}"):
+                st.code(f_x)
+                st.link_button("🐦 投稿", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(f_x)}", type="primary")
 
-    with tab3:
-        joint_input = st.text_area("タイムテーブルを貼り付け", height=120)
-        if st.button("🔍 チームを抽出する", type="primary", use_container_width=True):
-            st.session_state.joint_extracted_teams = extract_teams_from_blob(joint_input, df_teams)
-            
-        if "joint_extracted_teams" in st.session_state and st.session_state.joint_extracted_teams:
-            matched_teams = st.session_state.joint_extracted_teams
-            if "selected_joint_teams" not in st.session_state: st.session_state.selected_joint_teams = []
-            
-            cols = st.columns(2)
-            for i, t_name in enumerate(matched_teams):
-                with cols[i % 2]:
-                    is_sel = t_name in st.session_state.selected_joint_teams
-                    if st.button(f"{'✅' if is_sel else '⬜'} {t_name}", key=f"btn_{t_name}", use_container_width=True):
-                        if is_sel: st.session_state.selected_joint_teams.remove(t_name)
-                        elif len(st.session_state.selected_joint_teams) < 4: st.session_state.selected_joint_teams.append(t_name)
-                        st.rerun()
-            
-            if st.session_state.selected_joint_teams:
-                teams_text = "\n".join([f"🎤 {t}" for t in st.session_state.selected_joint_teams])
-                final_text = st.session_state.joint_base_text.replace("{teams}", teams_text)
-                final_text = st.text_area("✍️ 最終確認", value=final_text, height=200)
-                st.link_button("🐦 Xを開く", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(final_text)}", type="primary", use_container_width=True)
+with tab3:
+    joint_input = st.text_area("タイムテーブルを貼り付け", height=120)
+    if st.button("🔍 チームを抽出する", type="primary", use_container_width=True):
+        st.session_state.joint_extracted_teams = extract_teams_from_blob(joint_input, df_teams)
+    if "joint_extracted_teams" in st.session_state and st.session_state.joint_extracted_teams:
+        matched_teams = st.session_state.joint_extracted_teams
+        if "selected_joint_teams" not in st.session_state: st.session_state.selected_joint_teams = []
+        cols = st.columns(2)
+        for i, t_name in enumerate(matched_teams):
+            with cols[i % 2]:
+                is_sel = t_name in st.session_state.selected_joint_teams
+                if st.button(f"{'✅' if is_sel else '⬜'} {t_name}", key=f"btn_{t_name}", use_container_width=True):
+                    if is_sel: st.session_state.selected_joint_teams.remove(t_name)
+                    elif len(st.session_state.selected_joint_teams) < 4: st.session_state.selected_joint_teams.append(t_name)
+                    st.rerun()
+        if st.session_state.selected_joint_teams:
+            final_text = st.session_state.joint_base_text.replace("{teams}", "\n".join([f"🎤 {t}" for t in st.session_state.selected_joint_teams]))
+            final_text = st.text_area("✍️ 最終確認", value=final_text, height=200)
+            st.link_button("🐦 Xで開く", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(final_text)}", type="primary", use_container_width=True)
