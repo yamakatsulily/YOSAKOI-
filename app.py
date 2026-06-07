@@ -3,6 +3,7 @@ import pandas as pd
 import urllib.parse
 import re
 import unicodedata
+import math # ★計算用に新しく追加
 
 st.set_page_config(page_title="YOSAKOI現地投稿くん", layout="centered", initial_sidebar_state="expanded")
 
@@ -19,7 +20,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 0. 共通関数（超強力スキャナー）
+# 0. 共通関数（超強力スキャナー ＆ X公式カウンター）
 # ==========================================
 def normalize_text(text):
     if not isinstance(text, str): return ""
@@ -44,6 +45,19 @@ def extract_teams_from_blob(blob, df_teams):
     for item in found_teams:
         if item[1] not in result: result.append(item[1])
     return result
+
+# 🌟 新機能：X（Twitter）公式と同じ文字数カウント機能
+def get_x_char_count(text):
+    count = 0
+    for char in text:
+        # F(全角), W(広), A(曖昧=全角扱い) は 2ポイント（1文字分）
+        if unicodedata.east_asian_width(char) in ('F', 'W', 'A'):
+            count += 2
+        else:
+            # 半角英数字やスペースは 1ポイント（0.5文字分）
+            count += 1
+    # 2ポイントで1文字として計算し、端数は切り上げ
+    return math.ceil(count / 2)
 
 # ==========================================
 # 1. データ読み込み
@@ -79,14 +93,11 @@ with st.sidebar:
             st.session_state.editing_i = row["インスタ用"]
             st.session_state.joint_base_text = row["合同用"] if "合同用" in row.index and row["合同用"] else "🗓️{日付}\n🎪{会場} より速報！🔥\n\n{teams}\n\n#{イベント名}"
             
-            # 🌟 スプレッドシートから日付と会場を読み込んで記憶
             st.session_state.default_date = row["日付"] if "日付" in row.index else ""
             st.session_state.default_venue = row["会場"] if "会場" in row.index else ""
-            
             st.session_state.last_loaded_event = target_event
 
         st.write("📅 撮影データ情報")
-        st.caption("※ スプレッドシートの設定が自動で入っています")
         target_date = st.text_input("🗓 演舞日", value=st.session_state.default_date)
         target_venue = st.text_input("🎪 会場", value=st.session_state.default_venue)
         st.divider()
@@ -119,7 +130,6 @@ if not df_teams.empty:
                 selected = st.selectbox("チーム確定", results["名前"].tolist())
                 row = df_teams[df_teams["名前"] == selected].iloc[0]
                 
-                # 自動生成（イベント名を追加！）
                 try:
                     res_x = st.session_state.editing_x.format(名前=row['名前'], X=row['X'], インスタ=row['インスタ'], タグ=row['タグ'], part=part_num, 日付=target_date, 会場=target_venue, イベント名=target_event)
                     res_i = st.session_state.editing_i.format(名前=row['名前'], X=row['X'], インスタ=row['インスタ'], タグ=row['タグ'], part=part_num, 日付=target_date, 会場=target_venue, イベント名=target_event)
@@ -127,7 +137,8 @@ if not df_teams.empty:
                     t_x, t_i = st.tabs(["🐦 X (Twitter)", "📸 Instagram"])
                     
                     with t_x:
-                        char_count = len(res_x)
+                        # 🌟 ここが新しいX仕様カウンターです！
+                        char_count = get_x_char_count(res_x)
                         st.caption(f"{'🟢' if char_count <= 140 else '🔴'} 文字数: {char_count}/140")
                         st.code(res_x, language="text")
                         st.link_button("🐦 Xで開く", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(res_x)}", type="primary", use_container_width=True)
@@ -152,7 +163,8 @@ if not df_teams.empty:
                     
                     with st.expander(f"✅ {row['名前']}"):
                         st.write("**🐦 X用**")
-                        char_count = len(f_x)
+                        # 🌟 新しいX仕様カウンター
+                        char_count = get_x_char_count(f_x)
                         st.caption(f"{'🟢' if char_count <= 140 else '🔴'} 文字数: {char_count}/140")
                         st.code(f_x, language="text")
                         st.link_button("🐦 X投稿", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(f_x)}", type="primary")
@@ -183,11 +195,11 @@ if not df_teams.empty:
             
             if st.session_state.selected_joint_teams:
                 teams_text = "\n".join([f"🎤 {t}" for t in st.session_state.selected_joint_teams])
-                # 合同用にも日付、会場、イベント名を反映
                 final_text = st.session_state.joint_base_text.replace("{teams}", teams_text).replace("{日付}", target_date).replace("{会場}", target_venue).replace("{イベント名}", target_event)
                 final_text = st.text_area("✍️ 最終確認", value=final_text, height=200)
                 
-                char_count = len(final_text)
+                # 🌟 新しいX仕様カウンター
+                char_count = get_x_char_count(final_text)
                 st.caption(f"{'🟢' if char_count <= 140 else '🔴'} 文字数: {char_count}/140")
                     
                 st.link_button("🐦 Xを開く", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(final_text)}", type="primary", use_container_width=True)
