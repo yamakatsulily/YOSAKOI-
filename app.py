@@ -3,7 +3,7 @@ import pandas as pd
 import urllib.parse
 import re
 import unicodedata
-import math # ★計算用に新しく追加
+import math
 
 st.set_page_config(page_title="YOSAKOI現地投稿くん", layout="centered", initial_sidebar_state="expanded")
 
@@ -20,7 +20,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 0. 共通関数（超強力スキャナー ＆ X公式カウンター）
+# 0. 共通関数（超強力スキャナー ＆ ツール類）
 # ==========================================
 def normalize_text(text):
     if not isinstance(text, str): return ""
@@ -46,18 +46,28 @@ def extract_teams_from_blob(blob, df_teams):
         if item[1] not in result: result.append(item[1])
     return result
 
-# 🌟 新機能：X（Twitter）公式と同じ文字数カウント機能
 def get_x_char_count(text):
     count = 0
     for char in text:
-        # F(全角), W(広), A(曖昧=全角扱い) は 2ポイント（1文字分）
         if unicodedata.east_asian_width(char) in ('F', 'W', 'A'):
             count += 2
         else:
-            # 半角英数字やスペースは 1ポイント（0.5文字分）
             count += 1
-    # 2ポイントで1文字として計算し、端数は切り上げ
     return math.ceil(count / 2)
+
+# 🌟 新機能：アカウント名のクリーンアップ（「確認できず」などを自動で消去）
+def clean_social_id(text):
+    text = str(text).strip()
+    if not text or text.lower() == "nan" or "確認" in text or "不明" in text:
+        return ""
+    return text
+
+# 🌟 新機能：ハッシュタグが複数（スペース区切り）ある場合は自動で改行
+def format_hashtags(tag_text):
+    text = str(tag_text).strip()
+    if not text or text.lower() == "nan": return ""
+    tags = re.split(r'[\s　]+', text)
+    return "\n".join([t for t in tags if t])
 
 # ==========================================
 # 1. データ読み込み
@@ -131,13 +141,16 @@ if not df_teams.empty:
                 row = df_teams[df_teams["名前"] == selected].iloc[0]
                 
                 try:
-                    res_x = st.session_state.editing_x.format(名前=row['名前'], X=row['X'], インスタ=row['インスタ'], タグ=row['タグ'], part=part_num, 日付=target_date, 会場=target_venue, イベント名=target_event)
-                    res_i = st.session_state.editing_i.format(名前=row['名前'], X=row['X'], インスタ=row['インスタ'], タグ=row['タグ'], part=part_num, 日付=target_date, 会場=target_venue, イベント名=target_event)
+                    row_x = clean_social_id(row['X'])
+                    row_i = clean_social_id(row['インスタ'])
+                    row_tags = format_hashtags(row['タグ'])
+                    
+                    res_x = st.session_state.editing_x.format(名前=row['名前'], X=row_x, インスタ=row_i, タグ=row_tags, part=part_num, 日付=target_date, 会場=target_venue, イベント名=target_event)
+                    res_i = st.session_state.editing_i.format(名前=row['名前'], X=row_x, インスタ=row_i, タグ=row_tags, part=part_num, 日付=target_date, 会場=target_venue, イベント名=target_event)
                     
                     t_x, t_i = st.tabs(["🐦 X (Twitter)", "📸 Instagram"])
                     
                     with t_x:
-                        # 🌟 ここが新しいX仕様カウンターです！
                         char_count = get_x_char_count(res_x)
                         st.caption(f"{'🟢' if char_count <= 140 else '🔴'} 文字数: {char_count}/140")
                         st.code(res_x, language="text")
@@ -158,12 +171,15 @@ if not df_teams.empty:
             for t_name in matched:
                 row = df_teams[df_teams["名前"] == t_name].iloc[0]
                 try:
-                    f_x = st.session_state.editing_x.format(名前=row['名前'], X=row['X'], インスタ=row['インスタ'], タグ=row['タグ'], part=bulk_part, 日付=target_date, 会場=target_venue, イベント名=target_event)
-                    f_i = st.session_state.editing_i.format(名前=row['名前'], X=row['X'], インスタ=row['インスタ'], タグ=row['タグ'], part=bulk_part, 日付=target_date, 会場=target_venue, イベント名=target_event)
+                    row_x = clean_social_id(row['X'])
+                    row_i = clean_social_id(row['インスタ'])
+                    row_tags = format_hashtags(row['タグ'])
+                    
+                    f_x = st.session_state.editing_x.format(名前=row['名前'], X=row_x, インスタ=row_i, タグ=row_tags, part=bulk_part, 日付=target_date, 会場=target_venue, イベント名=target_event)
+                    f_i = st.session_state.editing_i.format(名前=row['名前'], X=row_x, インスタ=row_i, タグ=row_tags, part=bulk_part, 日付=target_date, 会場=target_venue, イベント名=target_event)
                     
                     with st.expander(f"✅ {row['名前']}"):
                         st.write("**🐦 X用**")
-                        # 🌟 新しいX仕様カウンター
                         char_count = get_x_char_count(f_x)
                         st.caption(f"{'🟢' if char_count <= 140 else '🔴'} 文字数: {char_count}/140")
                         st.code(f_x, language="text")
@@ -194,11 +210,17 @@ if not df_teams.empty:
                         st.rerun()
             
             if st.session_state.selected_joint_teams:
-                teams_text = "\n".join([f"🎤 {t}" for t in st.session_state.selected_joint_teams])
+                team_texts = []
+                for t_name in st.session_state.selected_joint_teams:
+                    row = df_teams[df_teams["名前"] == t_name].iloc[0]
+                    # 合同用でもXアカウントがメンションとして存在すれば一緒に表示
+                    x_id = clean_social_id(row['X'])
+                    team_texts.append(f"🎤 {t_name} {x_id}".strip())
+                    
+                teams_text = "\n".join(team_texts)
                 final_text = st.session_state.joint_base_text.replace("{teams}", teams_text).replace("{日付}", target_date).replace("{会場}", target_venue).replace("{イベント名}", target_event)
                 final_text = st.text_area("✍️ 最終確認", value=final_text, height=200)
                 
-                # 🌟 新しいX仕様カウンター
                 char_count = get_x_char_count(final_text)
                 st.caption(f"{'🟢' if char_count <= 140 else '🔴'} 文字数: {char_count}/140")
                     
