@@ -66,7 +66,7 @@ def clean_social_id(text):
 def format_hashtags(tag_text):
     text = str(tag_text).strip()
     if not text or text.lower() == "nan": return ""
-    tags = re.split(r'[\s　]+', text)
+    tags = re.split(r'[\s ]+', text)
     return "\n".join([t for t in tags if t])
 
 # ==========================================
