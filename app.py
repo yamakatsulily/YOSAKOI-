@@ -20,7 +20,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 0. 共通関数（超強力スキャナー ＆ ツール類）
+# 0. 共通関数
 # ==========================================
 def normalize_text(text):
     if not isinstance(text, str): return ""
@@ -55,14 +55,12 @@ def get_x_char_count(text):
             count += 1
     return math.ceil(count / 2)
 
-# 🌟 新機能：アカウント名のクリーンアップ（「確認できず」などを自動で消去）
 def clean_social_id(text):
     text = str(text).strip()
     if not text or text.lower() == "nan" or "確認" in text or "不明" in text:
         return ""
     return text
 
-# 🌟 新機能：ハッシュタグが複数（スペース区切り）ある場合は自動で改行
 def format_hashtags(tag_text):
     text = str(tag_text).strip()
     if not text or text.lower() == "nan": return ""
@@ -115,6 +113,7 @@ with st.sidebar:
         st.write("📝 ベース文章の微調整")
         st.session_state.editing_x = st.text_area("🐦 X用ベース", st.session_state.editing_x, height=120)
         st.session_state.editing_i = st.text_area("📸 インスタ用ベース", st.session_state.editing_i, height=120)
+        st.session_state.joint_base_text = st.text_area("🔥 速報(合同)用ベース", st.session_state.joint_base_text, height=120)
 
 # ==========================================
 # 3. メイン画面
@@ -211,11 +210,12 @@ if not df_teams.empty:
             
             if st.session_state.selected_joint_teams:
                 team_texts = []
-                for t_name in st.session_state.selected_joint_teams:
-                    row = df_teams[df_teams["名前"] == t_name].iloc[0]
-                    # 合同用でもXアカウントがメンションとして存在すれば一緒に表示
-                    x_id = clean_social_id(row['X'])
-                    team_texts.append(f"🎤 {t_name} {x_id}".strip())
+                for t_name in matched_teams:
+                    if t_name in st.session_state.selected_joint_teams:
+                        row = df_teams[df_teams["名前"] == t_name].iloc[0]
+                        x_id = clean_social_id(row['X'])
+                        # 🌟 ここでチーム名の後ろに「さん」を自動付与！
+                        team_texts.append(f"🎤 {t_name} さん {x_id}".strip())
                     
                 teams_text = "\n".join(team_texts)
                 final_text = st.session_state.joint_base_text.replace("{teams}", teams_text).replace("{日付}", target_date).replace("{会場}", target_venue).replace("{イベント名}", target_event)
