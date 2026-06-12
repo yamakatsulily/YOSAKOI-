@@ -4,6 +4,7 @@ import urllib.parse
 import re
 import unicodedata
 import math
+import difflib  # 🌟ゆらぎ検索用に追加
 
 st.set_page_config(page_title="YOSAKOI現地投稿くん", layout="centered", initial_sidebar_state="expanded")
 
@@ -20,19 +21,22 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 0. 共通関数
+# 0. 共通関数（超強力スキャナー）
 # ==========================================
 def normalize_text(text):
     if not isinstance(text, str): return ""
     text = unicodedata.normalize('NFKC', text).lower()
     return text.replace("櫻", "桜").replace("樂", "楽").replace("眞", "真").replace("邊", "辺").replace("澤", "沢").replace("濱", "浜")
 
-# 🌟 修正：タイムテーブルの「行」ごとに解析し、上から順番に並ぶようにアップデート！
+# 🌟 大幅アップデート：略称や記号抜けを察知する「ゆらぎ検索」
 def extract_teams_from_blob(blob, df_teams):
     if not blob: return []
     found_teams = []
     
-    # タイムテーブルを1行ずつ分割して処理
+    # 除外・分割用のキーワード
+    prefixes = ['よさこい', 'ヨサコイ', 'yosakoi', 'ソーラン', 'そーらん', 'チーム', 'ちーむ', 'ダンス', 'だんす', 'プロジェクト', 'ぷろじぇくと', '合同', 'ごうどう', '学生', 'がくせい']
+    ignore_words = ["大学", "だいがく", "学園", "がくえん", "北海道", "ほっかいどう", "札幌", "さっぽろ", "高校", "中学校", "同好会", "愛好会"]
+    
     lines = blob.split('\n')
     for line in lines:
         norm_line = re.sub(r'[^a-z0-9\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]', '', normalize_text(line))
@@ -41,24 +45,77 @@ def extract_teams_from_blob(blob, df_teams):
         line_teams = []
         for index, row in df_teams.iterrows():
             t_name = row["名前"]
-            clean_team = re.sub(r'[^a-z0-9\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]', '', normalize_text(t_name))
+            norm_team = normalize_text(t_name)
+            clean_team = re.sub(r'[^a-z0-9\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]', '', norm_team)
             if len(clean_team) < 2: continue
             
-            pos = norm_line.find(clean_team)
-            if pos != -1:
-                line_teams.append((pos, t_name, len(clean_team)))
-            else:
-                core_team = re.sub(r"[a-z0-9]", "", clean_team)
-                if len(core_team) >= 2:
-                    pos = norm_line.find(core_team)
-                    if pos != -1:
-                        line_teams.append((pos, t_name, len(core_team)))
+            # 検索候補を複数用意する（完全一致、英数字抜き、記号前のメイン部分、修飾語削り）
+            candidates = []
+            candidates.append(clean_team)
+            
+            core_team = re.sub(r"[a-z0-9]", "", clean_team)
+            if len(core_team) >= 2: candidates.append(core_team)
+            
+            parts = re.split(r'[\s　・（）()\[\]〜～\-－&＆]', t_name)
+            if len(parts) > 1:
+                main_part = re.sub(r'[^a-z0-9\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]', '', normalize_text(parts[0]))
+                if len(main_part) >= 2: candidates.append(main_part)
+            
+            stripped_team = clean_team
+            for _ in range(3):
+                for p in prefixes:
+                    if stripped_team.startswith(p): stripped_team = stripped_team[len(p):]
+                    if stripped_team.endswith(p): stripped_team = stripped_team[:-len(p)]
+            if len(stripped_team) >= 2: candidates.append(stripped_team)
+            
+            match_found = False
+            best_pos = -1
+            best_len = 0
+            
+            # 長い候補から順にタイムテーブルと照合
+            candidates.sort(key=len, reverse=True)
+            for cand in candidates:
+                pos = norm_line.find(cand)
+                if pos != -1:
+                    match_found = True
+                    best_pos = pos
+                    best_len = len(cand)
+                    break
+            
+            # それでも見つからなければ、部分的な一致（4文字以上など）をAI的に探す
+            if not match_found:
+                seq = difflib.SequenceMatcher(None, clean_team, norm_line)
+                match = seq.find_longest_match(0, len(clean_team), 0, len(norm_line))
+                matched_str = clean_team[match.a : match.a + match.size]
+                
+                is_generic = any(matched_str == p for p in prefixes) or any(matched_str == p+"チーム" for p in prefixes) or matched_str in ignore_words
+                
+                if match.size >= 4 and not is_generic:
+                    match_found = True
+                    best_pos = match.b
+                    best_len = match.size
+                elif match.size >= 3 and (match.size / len(clean_team)) >= 0.5 and not is_generic:
+                    match_found = True
+                    best_pos = match.b
+                    best_len = match.size
+                    
+            if match_found:
+                line_teams.append((best_pos, t_name, best_len))
         
-        # その行の中で見つかった順番に並べ替え（同じ位置なら文字数の長いチーム名を優先）
+        # 順番に並べつつ、同じチーム名の「完全版」と「略称版」の重複を排除
         line_teams.sort(key=lambda x: (x[0], -x[2]))
         
-        # すでに抽出済みのチームを除外しながらリストに追加
+        filtered_line_teams = []
         for item in line_teams:
+            overlap = False
+            for existing in filtered_line_teams:
+                if item[1] in existing[1]:
+                    overlap = True
+                    break
+            if not overlap:
+                filtered_line_teams.append(item)
+        
+        for item in filtered_line_teams:
             if item[1] not in found_teams:
                 found_teams.append(item[1])
                 
@@ -82,10 +139,9 @@ def clean_social_id(text):
 def format_hashtags(tag_text):
     text = str(tag_text).strip()
     if not text or text.lower() == "nan": return ""
-    tags = re.split(r'[\s ]+', text)
+    tags = re.split(r'[\s　]+', text)
     return "\n".join([t for t in tags if t])
 
-# 🌟 情報をURLに記憶させる関数
 def update_url():
     st.query_params["date"] = st.session_state.input_date
     st.query_params["venue"] = st.session_state.input_venue
