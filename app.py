@@ -8,22 +8,42 @@ import math
 st.set_page_config(page_title="YOSAKOI現地投稿くん", layout="centered", initial_sidebar_state="expanded")
 
 # ==========================================
-# 0. 共通関数
+# 🎨 デザイン・CSS
+# ==========================================
+st.markdown("""
+<style>
+    .block-container { padding-top: 4.5rem; padding-bottom: 2rem; }
+    div.stButton > button { border-radius: 8px; font-weight: bold; }
+    .custom-title { text-align: center; font-size: 1.8rem; font-weight: 800; color: #333; line-height: 1.2; }
+    .custom-subtitle { text-align: center; font-size: 0.8rem; color: #666; margin-bottom: 20px; letter-spacing: 1px; }
+</style>
+""", unsafe_allow_html=True)
+
+# ==========================================
+# 共通関数：強力な検索ロジック
 # ==========================================
 def normalize_text(text):
     if not isinstance(text, str): return ""
     text = ''.join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
     return unicodedata.normalize('NFKC', text).lower()
 
-def extract_teams_loose(blob, df_teams):
+def extract_teams_from_blob(blob, df_teams):
     if not blob: return []
+    # タイムテーブルの各行から、チーム名を強引にでも見つける
     found_teams = []
-    norm_blob = normalize_text(blob)
-    for _, row in df_teams.iterrows():
-        t_name = row["名前"]
-        target = normalize_text(t_name)[:4]
-        if len(target) >= 2 and target in norm_blob:
-            found_teams.append(t_name)
+    lines = blob.split('\n')
+    for line in lines:
+        norm_line = normalize_text(line)
+        norm_line = re.sub(r'[^a-z0-9\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]', '', norm_line)
+        for _, row in df_teams.iterrows():
+            t_name = row["名前"]
+            target = normalize_text(t_name)
+            target_clean = re.sub(r'[^a-z0-9\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]', '', target)
+            
+            # 2文字以上で前方一致すれば拾う
+            if len(target_clean) >= 2 and target_clean in norm_line:
+                if t_name not in found_teams:
+                    found_teams.append(t_name)
     return found_teams
 
 def get_x_char_count(text):
@@ -36,15 +56,6 @@ def clean_social_id(text):
     text = str(text).strip()
     if not text or text.lower() == "nan" or "確認" in text or "不明" in text: return ""
     return text
-
-def format_hashtags(tag_text):
-    text = str(tag_text).strip()
-    if not text or text.lower() == "nan": return ""
-    return "\n".join([t for t in re.split(r'[\s ]+', text) if t])
-
-def update_url():
-    st.query_params["date"] = st.session_state.input_date
-    st.query_params["venue"] = st.session_state.input_venue
 
 # ==========================================
 # 1. データ読み込み
@@ -61,43 +72,50 @@ df_teams = load_data(TEAM_SHEET_URL).rename(columns={"チーム名": "名前", "
 df_templates = load_data(TEMPLATE_SHEET_URL).rename(columns={"行事名": "イベント名", "Twitter用": "X用", "Instagram用": "インスタ用", "合同用": "合同用"})
 
 # ==========================================
-# 2. UI構築（サイドバー）
+# 2. UI
 # ==========================================
+st.markdown("<p class='custom-title'>🎤 YOSAKOI現地投稿くん</p>", unsafe_allow_html=True)
+st.markdown("<p class='custom-subtitle'>SNS POSTING ASSISTANT</p>", unsafe_allow_html=True)
+
 with st.sidebar:
     st.header("⚙️ 投稿設定")
     if not df_templates.empty:
         event_names = df_templates["イベント名"].tolist()
-        if "selected_event" not in st.session_state: st.session_state.selected_event = event_names[0]
-        target_event = st.selectbox("🎪 イベントを選択", event_names, index=event_names.index(st.session_state.selected_event))
+        target_event = st.selectbox("🎪 イベントを選択", event_names)
         row = df_templates[df_templates["イベント名"] == target_event].iloc[0]
         
         st.session_state.editing_x = row["X用"]
         st.session_state.joint_base_text = row["合同用"] if "合同用" in row.index and row["合同用"] else "🗓️{日付}\n🎪{会場} 速報！\n\n{teams}\n\n#{イベント名}"
         
-        st.text_input("🗓 演舞日", key="input_date", on_change=update_url, value=st.query_params.get("date", row.get("日付", "")))
-        st.text_input("🎪 会場", key="input_venue", on_change=update_url, value=st.query_params.get("venue", row.get("会場", "")))
+        target_date = st.text_input("🗓 演舞日", value=row.get("日付", ""))
+        target_venue = st.text_input("🎪 会場", value=row.get("会場", ""))
 
-# ==========================================
-# 3. メイン画面
-# ==========================================
-st.title("🎤 YOSAKOI現地投稿くん")
 tab1, tab2, tab3 = st.tabs(["🔍 1件ずつ", "🗓 一括生成", "📸 合同ピックアップ"])
 
 with tab3:
     joint_input = st.text_area("タイムテーブルを貼り付け", height=120)
     if st.button("🔍 チームを抽出"):
-        st.session_state.candidates = extract_teams_loose(joint_input, df_teams)
-        st.session_state.checked_teams = st.session_state.candidates.copy()
+        st.session_state.joint_extracted_teams = extract_teams_from_blob(joint_input, df_teams)
+        st.session_state.selected_joint_teams = []
 
-    if "candidates" in st.session_state:
-        st.write("### ✅ 投稿するチームを選択")
-        selected = []
-        for t in st.session_state.candidates:
-            if st.checkbox(t, value=(t in st.session_state.checked_teams)):
-                selected.append(t)
+    if "joint_extracted_teams" in st.session_state:
+        matched = st.session_state.joint_extracted_teams
+        cols = st.columns(2)
+        for i, t in enumerate(matched):
+            with cols[i % 2]:
+                if st.button(t, key=f"btn_{t}"):
+                    if t not in st.session_state.selected_joint_teams:
+                        st.session_state.selected_joint_teams.append(t)
         
-        if selected:
-            team_texts = [f"🎤 {t} さん {clean_social_id(df_teams[df_teams['名前']==t].iloc[0]['X'])}" for t in selected]
-            final_text = st.session_state.joint_base_text.format(teams="\n".join(team_texts), 日付=st.session_state.input_date, 会場=st.session_state.input_venue, イベント名=target_event)
+        st.write("---")
+        st.write("### 選んだチーム")
+        for t in st.session_state.selected_joint_teams:
+            if st.button(f"❌ {t}"):
+                st.session_state.selected_joint_teams.remove(t)
+                st.rerun()
+        
+        if st.session_state.selected_joint_teams:
+            team_texts = [f"🎤 {t} さん {clean_social_id(df_teams[df_teams['名前']==t].iloc[0]['X'])}" for t in st.session_state.selected_joint_teams]
+            final_text = st.session_state.joint_base_text.replace("{teams}", "\n".join(team_texts)).replace("{日付}", target_date).replace("{会場}", target_venue).replace("{イベント名}", target_event)
             final_text = st.text_area("✍️ 最終確認", value=final_text, height=200)
-            st.link_button("🐦 Xで開く", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(final_text)}", type="primary")
+            st.link_button("🐦 Xで開く", f"https://twitter.com/intent/tweet?text={urllib.parse.quote(final_text)}", type="primary", use_container_width=True)
