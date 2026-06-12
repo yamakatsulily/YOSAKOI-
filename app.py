@@ -4,7 +4,6 @@ import urllib.parse
 import re
 import unicodedata
 import math
-import difflib
 
 st.set_page_config(page_title="YOSAKOI現地投稿くん", layout="centered", initial_sidebar_state="expanded")
 
@@ -21,96 +20,116 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 0. 共通関数（超強力スキャナー）
+# 0. 共通関数（超・前方一致スキャナー）
 # ==========================================
 def normalize_text(text):
     if not isinstance(text, str): return ""
-    text = unicodedata.normalize('NFKC', text).lower()
-    # 🌟 NEW: フランス語などのアクセント記号（êなど）を分離して消去し、基本のアルファベット（eなど）にする
     text = ''.join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
+    text = unicodedata.normalize('NFKC', text).lower()
     return text.replace("櫻", "桜").replace("樂", "楽").replace("眞", "真").replace("邊", "辺").replace("澤", "沢").replace("濱", "浜")
 
 def extract_teams_from_blob(blob, df_teams):
     if not blob: return []
     found_teams = []
     
-    prefixes = ['よさこい', 'ヨサコイ', 'yosakoi', 'ソーラン', 'そーらん', 'チーム', 'ちーむ', 'ダンス', 'だんす', 'プロジェクト', 'ぷろじぇくと', '合同', 'ごうどう', '学生', 'がくせい']
-    ignore_words = ["大学", "だいがく", "学園", "がくえん", "北海道", "ほっかいどう", "札幌", "さっぽろ", "高校", "中学校", "同好会", "愛好会"]
+    # --- 事前準備：全チームの検索候補（前方一致用）を作成 ---
+    team_search_data = []
     
+    # 汎用ワードを削る関数（例：「よさこいチーム倭奏」→「倭奏」）
+    def strip_generic(text):
+        prefixes = ['よさこい', 'ヨサコイ', 'yosakoi', 'そーらん', 'ソーラン', 'ちーむ', 'チーム', 'だんす', 'ダンス', 'ぷろじぇくと', 'プロジェクト', 'ごうどう', '合同', 'がくせい', '学生']
+        res = text
+        for _ in range(3):
+            for p in prefixes:
+                if res.startswith(p): res = res[len(p):]
+                if res.endswith(p): res = res[:-len(p)]
+        return res
+
+    for index, row in df_teams.iterrows():
+        t_name = row["名前"]
+        name = normalize_text(t_name)
+        
+        # 記号で分割
+        parts = re.split(r'[\s ・（）()\[\]〜～\-－&＆_＿]', name)
+        clean_parts = [re.sub(r'[^a-z0-9\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]', '', p) for p in parts]
+        clean_parts = [p for p in clean_parts if p]
+        
+        candidates = set()
+        
+        # 1. 全部繋げたもの
+        full_clean = "".join(clean_parts)
+        if len(full_clean) >= 2: candidates.add(full_clean)
+        
+        # 2. 英数字抜き（漢字・ひらがな等のみ）
+        core = re.sub(r'[a-z0-9]', '', full_clean)
+        if len(core) >= 2: candidates.add(core)
+            
+        # 3. 「よさこい」等の汎用ワードを削ったもの
+        stripped_full = strip_generic(full_clean)
+        if len(stripped_full) >= 2: candidates.add(stripped_full)
+        
+        stripped_core = strip_generic(core)
+        if len(stripped_core) >= 2: candidates.add(stripped_core)
+            
+        # 4. 記号等で分割された各パーツ
+        for p in clean_parts:
+            sp = strip_generic(p)
+            if len(sp) >= 2: candidates.add(sp)
+            elif len(p) >= 2: candidates.add(p)
+                
+        # --- 🌟ここが本命！前方一致（Prefix）の生成 ---
+        prefix_candidates = set()
+        for cand in candidates:
+            prefix_candidates.add(cand)
+            # 長い名前なら、途中で切れていてもマッチするように前方一致候補を作る
+            if len(cand) >= 5:
+                for i in range(len(cand)-1, 3, -1): # 4文字まで許容
+                    prefix_candidates.add(cand[:i])
+            elif len(cand) == 4:
+                prefix_candidates.add(cand[:3]) # 4文字のチームは3文字まで許容
+                
+        # 誤爆防止のため、短すぎる一般的な単語は除外
+        ignore_words = {"だいがく", "大学", "学園", "がくえん", "北海道", "札幌", "さっぽろ", "高校", "中学", "ジュニア", "キッズ", "チーム", "ちーむ"}
+        prefix_candidates = {c for c in prefix_candidates if c not in ignore_words}
+        
+        for cand in prefix_candidates:
+            team_search_data.append((t_name, cand, len(cand)))
+
+    # --- タイムテーブルの解析 ---
     lines = blob.split('\n')
     for line in lines:
-        norm_line = re.sub(r'[^a-z0-9\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]', '', normalize_text(line))
+        norm_line = normalize_text(line)
+        norm_line = re.sub(r'[^a-z0-9\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]', '', norm_line)
         if not norm_line: continue
         
         line_teams = []
-        for index, row in df_teams.iterrows():
-            t_name = row["名前"]
-            norm_team = normalize_text(t_name)
-            clean_team = re.sub(r'[^a-z0-9\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]', '', norm_team)
-            if len(clean_team) < 2: continue
-            
-            candidates = []
-            candidates.append(clean_team)
-            
-            core_team = re.sub(r"[a-z0-9]", "", clean_team)
-            if len(core_team) >= 2: candidates.append(core_team)
-            
-            parts = re.split(r'[\s ・（）()\[\]〜～\-－&＆]', t_name)
-            if len(parts) > 1:
-                main_part = re.sub(r'[^a-z0-9\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]', '', normalize_text(parts[0]))
-                if len(main_part) >= 2: candidates.append(main_part)
-            
-            stripped_team = clean_team
-            for _ in range(3):
-                for p in prefixes:
-                    if stripped_team.startswith(p): stripped_team = stripped_team[len(p):]
-                    if stripped_team.endswith(p): stripped_team = stripped_team[:-len(p)]
-            if len(stripped_team) >= 2: candidates.append(stripped_team)
-            
-            match_found = False
-            best_pos = -1
-            best_len = 0
-            
-            candidates.sort(key=len, reverse=True)
-            for cand in candidates:
-                pos = norm_line.find(cand)
-                if pos != -1:
-                    match_found = True
-                    best_pos = pos
-                    best_len = len(cand)
-                    break
-            
-            if not match_found:
-                seq = difflib.SequenceMatcher(None, clean_team, norm_line)
-                match = seq.find_longest_match(0, len(clean_team), 0, len(norm_line))
-                matched_str = clean_team[match.a : match.a + match.size]
+        # その行に対して全候補をぶつける
+        for t_name, cand, cand_len in team_search_data:
+            pos = norm_line.find(cand)
+            if pos != -1:
+                line_teams.append((pos, t_name, cand_len))
                 
-                is_generic = any(matched_str == p for p in prefixes) or any(matched_str == p+"チーム" for p in prefixes) or matched_str in ignore_words
-                
-                if match.size >= 4 and not is_generic:
-                    match_found = True
-                    best_pos = match.b
-                    best_len = match.size
-                elif match.size >= 3 and (match.size / len(clean_team)) >= 0.5 and not is_generic:
-                    match_found = True
-                    best_pos = match.b
-                    best_len = match.size
-                    
-            if match_found:
-                line_teams.append((best_pos, t_name, best_len))
-        
-        line_teams.sort(key=lambda x: (x[0], -x[2]))
+        # 同じ位置で見つかった場合、①文字数が長いマッチ ②元のチーム名が短い（完全一致） を優先
+        line_teams.sort(key=lambda x: (x[0], -x[2], len(x[1])))
         
         filtered_line_teams = []
         for item in line_teams:
             overlap = False
             for existing in filtered_line_teams:
-                if item[1] in existing[1]:
+                # すでに抽出されたチーム名と完全に同じ場合はスキップ
+                if item[1] == existing[1]:
+                    overlap = True
+                    break
+                # 見つかった文字列の範囲が被っている場合は、より長くマッチしたものを優先
+                e_start, e_end = existing[0], existing[0] + existing[2]
+                i_start, i_end = item[0], item[0] + item[2]
+                if max(e_start, i_start) < min(e_end, i_end):
                     overlap = True
                     break
             if not overlap:
                 filtered_line_teams.append(item)
-        
+                
+        # 見つかった順番でリストに追加
         for item in filtered_line_teams:
             if item[1] not in found_teams:
                 found_teams.append(item[1])
