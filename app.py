@@ -64,7 +64,7 @@ def clean_social_id(text):
 def format_hashtags(tag_text):
     text = str(tag_text).strip()
     if not text or text.lower() == "nan": return ""
-    tags = re.split(r'[\s ]+', text)
+    tags = re.split(r'[\s　]+', text)
     return "\n".join([t for t in tags if t])
 
 # ==========================================
@@ -95,25 +95,31 @@ with st.sidebar:
         if "selected_event" not in st.session_state: st.session_state.selected_event = event_names[0]
         target_event = st.selectbox("🎪 イベントを選択", event_names, index=event_names.index(st.session_state.selected_event))
         
+        # 🌟 イベントを切り替えた時「だけ」、スプレッドシートから初期値を読み込む
         if "last_loaded_event" not in st.session_state or st.session_state.last_loaded_event != target_event:
             row = df_templates[df_templates["イベント名"] == target_event].iloc[0]
+            
+            # session_stateに初期値をセット（これがテキストエリアの初期値になります）
             st.session_state.editing_x = row["X用"]
             st.session_state.editing_i = row["インスタ用"]
             st.session_state.joint_base_text = row["合同用"] if "合同用" in row.index and row["合同用"] else "🗓️{日付}\n🎪{会場} より速報！🔥\n\n{teams}\n\n#{イベント名}"
             
-            st.session_state.default_date = row["日付"] if "日付" in row.index else ""
-            st.session_state.default_venue = row["会場"] if "会場" in row.index else ""
+            st.session_state.input_date = row["日付"] if "日付" in row.index else ""
+            st.session_state.input_venue = row["会場"] if "会場" in row.index else ""
+            
             st.session_state.last_loaded_event = target_event
 
         st.write("📅 撮影データ情報")
-        target_date = st.text_input("🗓 演舞日", value=st.session_state.default_date)
-        target_venue = st.text_input("🎪 会場", value=st.session_state.default_venue)
+        # 🌟 keyを設定することで、ユーザーの入力を記憶させる
+        st.text_input("🗓 演舞日", key="input_date")
+        st.text_input("🎪 会場", key="input_venue")
         st.divider()
 
         st.write("📝 ベース文章の微調整")
-        st.session_state.editing_x = st.text_area("🐦 X用ベース", st.session_state.editing_x, height=120)
-        st.session_state.editing_i = st.text_area("📸 インスタ用ベース", st.session_state.editing_i, height=120)
-        st.session_state.joint_base_text = st.text_area("🔥 速報(合同)用ベース", st.session_state.joint_base_text, height=120)
+        # 🌟 keyを設定することで、手動で微調整した文章をキープする
+        st.text_area("🐦 X用ベース", key="editing_x", height=120)
+        st.text_area("📸 インスタ用ベース", key="editing_i", height=120)
+        st.text_area("🔥 速報(合同)用ベース", key="joint_base_text", height=120)
 
 # ==========================================
 # 3. メイン画面
@@ -144,8 +150,8 @@ if not df_teams.empty:
                     row_i = clean_social_id(row['インスタ'])
                     row_tags = format_hashtags(row['タグ'])
                     
-                    res_x = st.session_state.editing_x.format(名前=row['名前'], X=row_x, インスタ=row_i, タグ=row_tags, part=part_num, 日付=target_date, 会場=target_venue, イベント名=target_event)
-                    res_i = st.session_state.editing_i.format(名前=row['名前'], X=row_x, インスタ=row_i, タグ=row_tags, part=part_num, 日付=target_date, 会場=target_venue, イベント名=target_event)
+                    res_x = st.session_state.editing_x.format(名前=row['名前'], X=row_x, インスタ=row_i, タグ=row_tags, part=part_num, 日付=st.session_state.input_date, 会場=st.session_state.input_venue, イベント名=target_event)
+                    res_i = st.session_state.editing_i.format(名前=row['名前'], X=row_x, インスタ=row_i, タグ=row_tags, part=part_num, 日付=st.session_state.input_date, 会場=st.session_state.input_venue, イベント名=target_event)
                     
                     t_x, t_i = st.tabs(["🐦 X (Twitter)", "📸 Instagram"])
                     
@@ -174,8 +180,8 @@ if not df_teams.empty:
                     row_i = clean_social_id(row['インスタ'])
                     row_tags = format_hashtags(row['タグ'])
                     
-                    f_x = st.session_state.editing_x.format(名前=row['名前'], X=row_x, インスタ=row_i, タグ=row_tags, part=bulk_part, 日付=target_date, 会場=target_venue, イベント名=target_event)
-                    f_i = st.session_state.editing_i.format(名前=row['名前'], X=row_x, インスタ=row_i, タグ=row_tags, part=bulk_part, 日付=target_date, 会場=target_venue, イベント名=target_event)
+                    f_x = st.session_state.editing_x.format(名前=row['名前'], X=row_x, インスタ=row_i, タグ=row_tags, part=bulk_part, 日付=st.session_state.input_date, 会場=st.session_state.input_venue, イベント名=target_event)
+                    f_i = st.session_state.editing_i.format(名前=row['名前'], X=row_x, インスタ=row_i, タグ=row_tags, part=bulk_part, 日付=st.session_state.input_date, 会場=st.session_state.input_venue, イベント名=target_event)
                     
                     with st.expander(f"✅ {row['名前']}"):
                         st.write("**🐦 X用**")
@@ -214,11 +220,10 @@ if not df_teams.empty:
                     if t_name in st.session_state.selected_joint_teams:
                         row = df_teams[df_teams["名前"] == t_name].iloc[0]
                         x_id = clean_social_id(row['X'])
-                        # 🌟 ここでチーム名の後ろに「さん」を自動付与！
                         team_texts.append(f"🎤 {t_name} さん {x_id}".strip())
                     
                 teams_text = "\n".join(team_texts)
-                final_text = st.session_state.joint_base_text.replace("{teams}", teams_text).replace("{日付}", target_date).replace("{会場}", target_venue).replace("{イベント名}", target_event)
+                final_text = st.session_state.joint_base_text.replace("{teams}", teams_text).replace("{日付}", st.session_state.input_date).replace("{会場}", st.session_state.input_venue).replace("{イベント名}", target_event)
                 final_text = st.text_area("✍️ 最終確認", value=final_text, height=200)
                 
                 char_count = get_x_char_count(final_text)
