@@ -27,24 +27,42 @@ def normalize_text(text):
     text = unicodedata.normalize('NFKC', text).lower()
     return text.replace("櫻", "桜").replace("樂", "楽").replace("眞", "真").replace("邊", "辺").replace("澤", "沢").replace("濱", "浜")
 
+# 🌟 修正：タイムテーブルの「行」ごとに解析し、上から順番に並ぶようにアップデート！
 def extract_teams_from_blob(blob, df_teams):
     if not blob: return []
-    norm_blob = re.sub(r'[^a-z0-9\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]', '', normalize_text(blob))
     found_teams = []
-    for index, row in df_teams.iterrows():
-        t_name = row["名前"]
-        norm_team = normalize_text(t_name)
-        clean_team = re.sub(r'[^a-z0-9\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]', '', norm_team)
-        if len(clean_team) < 2: continue
-        if norm_blob.find(clean_team) != -1: found_teams.append((norm_blob.find(clean_team), t_name))
-        else:
-            core_team = re.sub(r"[a-z0-9]", "", clean_team)
-            if len(core_team) >= 2 and norm_blob.find(core_team) != -1: found_teams.append((norm_blob.find(core_team), t_name))
-    found_teams.sort(key=lambda x: x[0])
-    result = []
-    for item in found_teams:
-        if item[1] not in result: result.append(item[1])
-    return result
+    
+    # タイムテーブルを1行ずつ分割して処理
+    lines = blob.split('\n')
+    for line in lines:
+        norm_line = re.sub(r'[^a-z0-9\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]', '', normalize_text(line))
+        if not norm_line: continue
+        
+        line_teams = []
+        for index, row in df_teams.iterrows():
+            t_name = row["名前"]
+            clean_team = re.sub(r'[^a-z0-9\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]', '', normalize_text(t_name))
+            if len(clean_team) < 2: continue
+            
+            pos = norm_line.find(clean_team)
+            if pos != -1:
+                line_teams.append((pos, t_name, len(clean_team)))
+            else:
+                core_team = re.sub(r"[a-z0-9]", "", clean_team)
+                if len(core_team) >= 2:
+                    pos = norm_line.find(core_team)
+                    if pos != -1:
+                        line_teams.append((pos, t_name, len(core_team)))
+        
+        # その行の中で見つかった順番に並べ替え（同じ位置なら文字数の長いチーム名を優先）
+        line_teams.sort(key=lambda x: (x[0], -x[2]))
+        
+        # すでに抽出済みのチームを除外しながらリストに追加
+        for item in line_teams:
+            if item[1] not in found_teams:
+                found_teams.append(item[1])
+                
+    return found_teams
 
 def get_x_char_count(text):
     count = 0
@@ -64,7 +82,7 @@ def clean_social_id(text):
 def format_hashtags(tag_text):
     text = str(tag_text).strip()
     if not text or text.lower() == "nan": return ""
-    tags = re.split(r'[\s　]+', text)
+    tags = re.split(r'[\s ]+', text)
     return "\n".join([t for t in tags if t])
 
 # 🌟 情報をURLに記憶させる関数
@@ -106,7 +124,6 @@ with st.sidebar:
             st.session_state.editing_i = row["インスタ用"]
             st.session_state.joint_base_text = row["合同用"] if "合同用" in row.index and row["合同用"] else "🗓️{日付}\n🎪{会場} より速報！🔥\n\n{teams}\n\n#{イベント名}"
             
-            # 🌟 URLに記憶されていればそれを最優先で復元し、無ければスプレッドシートの値をセット
             def_date = str(row["日付"]) if "日付" in row.index else ""
             def_venue = str(row["会場"]) if "会場" in row.index else ""
             st.session_state.input_date = st.query_params.get("date", def_date)
@@ -115,11 +132,9 @@ with st.sidebar:
             st.session_state.last_loaded_event = target_event
 
         st.write("📅 撮影データ情報")
-        # 🌟 入力されるたびに update_url 関数を呼び出してURLに書き込む
         st.text_input("🗓 演舞日", key="input_date", on_change=update_url)
         st.text_input("🎪 会場", key="input_venue", on_change=update_url)
         
-        # 初回起動時にも今の状態をURLにセットしておく
         st.query_params["date"] = st.session_state.input_date
         st.query_params["venue"] = st.session_state.input_venue
         st.divider()
@@ -145,7 +160,6 @@ if not df_teams.empty:
         with col_search:
             query = st.text_input("チーム名検索", placeholder="ひらぎし、科学大など")
         with col_part:
-            # 🌟 part番号もURLで記憶する
             def update_part():
                 st.query_params["part"] = st.session_state.single_part
             part_num = st.text_input("part", value=st.query_params.get("part", "1"), key="single_part", on_change=update_part)
