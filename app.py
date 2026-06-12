@@ -67,6 +67,11 @@ def format_hashtags(tag_text):
     tags = re.split(r'[\s　]+', text)
     return "\n".join([t for t in tags if t])
 
+# 🌟 情報をURLに記憶させる関数
+def update_url():
+    st.query_params["date"] = st.session_state.input_date
+    st.query_params["venue"] = st.session_state.input_venue
+
 # ==========================================
 # 1. データ読み込み
 # ==========================================
@@ -95,31 +100,35 @@ with st.sidebar:
         if "selected_event" not in st.session_state: st.session_state.selected_event = event_names[0]
         target_event = st.selectbox("🎪 イベントを選択", event_names, index=event_names.index(st.session_state.selected_event))
         
-        # 🌟 イベントを切り替えた時「だけ」、スプレッドシートから初期値を読み込む
         if "last_loaded_event" not in st.session_state or st.session_state.last_loaded_event != target_event:
             row = df_templates[df_templates["イベント名"] == target_event].iloc[0]
-            
-            # session_stateに初期値をセット（これがテキストエリアの初期値になります）
             st.session_state.editing_x = row["X用"]
             st.session_state.editing_i = row["インスタ用"]
             st.session_state.joint_base_text = row["合同用"] if "合同用" in row.index and row["合同用"] else "🗓️{日付}\n🎪{会場} より速報！🔥\n\n{teams}\n\n#{イベント名}"
             
-            st.session_state.input_date = row["日付"] if "日付" in row.index else ""
-            st.session_state.input_venue = row["会場"] if "会場" in row.index else ""
+            # 🌟 URLに記憶されていればそれを最優先で復元し、無ければスプレッドシートの値をセット
+            def_date = str(row["日付"]) if "日付" in row.index else ""
+            def_venue = str(row["会場"]) if "会場" in row.index else ""
+            st.session_state.input_date = st.query_params.get("date", def_date)
+            st.session_state.input_venue = st.query_params.get("venue", def_venue)
             
             st.session_state.last_loaded_event = target_event
 
         st.write("📅 撮影データ情報")
-        # 🌟 keyを設定することで、ユーザーの入力を記憶させる
-        st.text_input("🗓 演舞日", key="input_date")
-        st.text_input("🎪 会場", key="input_venue")
+        # 🌟 入力されるたびに update_url 関数を呼び出してURLに書き込む
+        st.text_input("🗓 演舞日", key="input_date", on_change=update_url)
+        st.text_input("🎪 会場", key="input_venue", on_change=update_url)
+        
+        # 初回起動時にも今の状態をURLにセットしておく
+        st.query_params["date"] = st.session_state.input_date
+        st.query_params["venue"] = st.session_state.input_venue
         st.divider()
 
         st.write("📝 ベース文章の微調整")
-        # 🌟 keyを設定することで、手動で微調整した文章をキープする
-        st.text_area("🐦 X用ベース", key="editing_x", height=120)
-        st.text_area("📸 インスタ用ベース", key="editing_i", height=120)
-        st.text_area("🔥 速報(合同)用ベース", key="joint_base_text", height=120)
+        st.caption("※ここは再読み込みで消えるので、ベース文の大幅な変更はスプレッドシートで行ってください")
+        st.session_state.editing_x = st.text_area("🐦 X用ベース", st.session_state.editing_x, height=120)
+        st.session_state.editing_i = st.text_area("📸 インスタ用ベース", st.session_state.editing_i, height=120)
+        st.session_state.joint_base_text = st.text_area("🔥 速報(合同)用ベース", st.session_state.joint_base_text, height=120)
 
 # ==========================================
 # 3. メイン画面
@@ -136,7 +145,10 @@ if not df_teams.empty:
         with col_search:
             query = st.text_input("チーム名検索", placeholder="ひらぎし、科学大など")
         with col_part:
-            part_num = st.text_input("part", value="1", key="single_part")
+            # 🌟 part番号もURLで記憶する
+            def update_part():
+                st.query_params["part"] = st.session_state.single_part
+            part_num = st.text_input("part", value=st.query_params.get("part", "1"), key="single_part", on_change=update_part)
             
         if query:
             norm_q = normalize_text(query)
