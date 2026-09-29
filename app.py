@@ -20,31 +20,121 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 0. 共通関数
+# 0. 共通関数（超・前方一致スキャナー）
 # ==========================================
 def normalize_text(text):
     if not isinstance(text, str): return ""
+    text = ''.join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
     text = unicodedata.normalize('NFKC', text).lower()
     return text.replace("櫻", "桜").replace("樂", "楽").replace("眞", "真").replace("邊", "辺").replace("澤", "沢").replace("濱", "浜")
 
 def extract_teams_from_blob(blob, df_teams):
     if not blob: return []
-    norm_blob = re.sub(r'[^a-z0-9\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]', '', normalize_text(blob))
     found_teams = []
+    
+    # --- 事前準備：全チームの検索候補（前方一致用）を作成 ---
+    team_search_data = []
+    
+    # 汎用ワードを削る関数（例：「よさこいチーム倭奏」→「倭奏」）
+    def strip_generic(text):
+        prefixes = ['よさこい', 'ヨサコイ', 'yosakoi', 'そーらん', 'ソーラン', 'ちーむ', 'チーム', 'だんす', 'ダンス', 'ぷろじぇくと', 'プロジェクト', 'ごうどう', '合同', 'がくせい', '学生']
+        res = text
+        for _ in range(3):
+            for p in prefixes:
+                if res.startswith(p): res = res[len(p):]
+                if res.endswith(p): res = res[:-len(p)]
+        return res
+
     for index, row in df_teams.iterrows():
         t_name = row["名前"]
-        norm_team = normalize_text(t_name)
-        clean_team = re.sub(r'[^a-z0-9\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]', '', norm_team)
-        if len(clean_team) < 2: continue
-        if norm_blob.find(clean_team) != -1: found_teams.append((norm_blob.find(clean_team), t_name))
-        else:
-            core_team = re.sub(r"[a-z0-9]", "", clean_team)
-            if len(core_team) >= 2 and norm_blob.find(core_team) != -1: found_teams.append((norm_blob.find(core_team), t_name))
-    found_teams.sort(key=lambda x: x[0])
-    result = []
-    for item in found_teams:
-        if item[1] not in result: result.append(item[1])
-    return result
+        name = normalize_text(t_name)
+        
+        # 記号で分割
+        parts = re.split(r'[\s ・（）()\[\]〜～\-－&＆_＿]', name)
+        clean_parts = [re.sub(r'[^a-z0-9\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]', '', p) for p in parts]
+        clean_parts = [p for p in clean_parts if p]
+        
+        candidates = set()
+        
+        # 1. 全部繋げたもの
+        full_clean = "".join(clean_parts)
+        if len(full_clean) >= 2: candidates.add(full_clean)
+        
+        # 2. 英数字抜き（漢字・ひらがな等のみ）
+        core = re.sub(r'[a-z0-9]', '', full_clean)
+        if len(core) >= 2: candidates.add(core)
+            
+        # 3. 「よさこい」等の汎用ワードを削ったもの
+        stripped_full = strip_generic(full_clean)
+        if len(stripped_full) >= 2: candidates.add(stripped_full)
+        
+        stripped_core = strip_generic(core)
+        if len(stripped_core) >= 2: candidates.add(stripped_core)
+            
+        # 4. 記号等で分割された各パーツ
+        for p in clean_parts:
+            sp = strip_generic(p)
+            if len(sp) >= 2: candidates.add(sp)
+            elif len(p) >= 2: candidates.add(p)
+                
+        # --- 🌟ここが本命！前方一致（Prefix）の生成 ---
+        prefix_candidates = set()
+        for cand in candidates:
+            prefix_candidates.add(cand)
+            # 長い名前なら、途中で切れていてもマッチするように前方一致候補を作る
+            if len(cand) >= 5:
+                for i in range(len(cand)-1, 3, -1): # 4文字まで許容
+                    prefix_candidates.add(cand[:i])
+            elif len(cand) == 4:
+                prefix_candidates.add(cand[:3]) # 4文字のチームは3文字まで許容
+                
+        # 誤爆防止のため、短すぎる一般的な単語は除外
+        ignore_words = {"だいがく", "大学", "学園", "がくえん", "北海道", "札幌", "さっぽろ", "高校", "中学", "ジュニア", "キッズ", "チーム", "ちーむ"}
+        prefix_candidates = {c for c in prefix_candidates if c not in ignore_words}
+        
+        for cand in prefix_candidates:
+            team_search_data.append((t_name, cand, len(cand)))
+
+    # --- タイムテーブルの解析 ---
+    lines = blob.split('\n')
+    for line in lines:
+        norm_line = normalize_text(line)
+        norm_line = re.sub(r'[^a-z0-9\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]', '', norm_line)
+        if not norm_line: continue
+        
+        line_teams = []
+        # その行に対して全候補をぶつける
+        for t_name, cand, cand_len in team_search_data:
+            pos = norm_line.find(cand)
+            if pos != -1:
+                line_teams.append((pos, t_name, cand_len))
+                
+        # 同じ位置で見つかった場合、①文字数が長いマッチ ②元のチーム名が短い（完全一致） を優先
+        line_teams.sort(key=lambda x: (x[0], -x[2], len(x[1])))
+        
+        filtered_line_teams = []
+        for item in line_teams:
+            overlap = False
+            for existing in filtered_line_teams:
+                # すでに抽出されたチーム名と完全に同じ場合はスキップ
+                if item[1] == existing[1]:
+                    overlap = True
+                    break
+                # 見つかった文字列の範囲が被っている場合は、より長くマッチしたものを優先
+                e_start, e_end = existing[0], existing[0] + existing[2]
+                i_start, i_end = item[0], item[0] + item[2]
+                if max(e_start, i_start) < min(e_end, i_end):
+                    overlap = True
+                    break
+            if not overlap:
+                filtered_line_teams.append(item)
+                
+        # 見つかった順番でリストに追加
+        for item in filtered_line_teams:
+            if item[1] not in found_teams:
+                found_teams.append(item[1])
+                
+    return found_teams
 
 def get_x_char_count(text):
     count = 0
@@ -66,6 +156,10 @@ def format_hashtags(tag_text):
     if not text or text.lower() == "nan": return ""
     tags = re.split(r'[\s ]+', text)
     return "\n".join([t for t in tags if t])
+
+def update_url():
+    st.query_params["date"] = st.session_state.input_date
+    st.query_params["venue"] = st.session_state.input_venue
 
 # ==========================================
 # 1. データ読み込み
@@ -101,16 +195,23 @@ with st.sidebar:
             st.session_state.editing_i = row["インスタ用"]
             st.session_state.joint_base_text = row["合同用"] if "合同用" in row.index and row["合同用"] else "🗓️{日付}\n🎪{会場} より速報！🔥\n\n{teams}\n\n#{イベント名}"
             
-            st.session_state.default_date = row["日付"] if "日付" in row.index else ""
-            st.session_state.default_venue = row["会場"] if "会場" in row.index else ""
+            def_date = str(row["日付"]) if "日付" in row.index else ""
+            def_venue = str(row["会場"]) if "会場" in row.index else ""
+            st.session_state.input_date = st.query_params.get("date", def_date)
+            st.session_state.input_venue = st.query_params.get("venue", def_venue)
+            
             st.session_state.last_loaded_event = target_event
 
         st.write("📅 撮影データ情報")
-        target_date = st.text_input("🗓 演舞日", value=st.session_state.default_date)
-        target_venue = st.text_input("🎪 会場", value=st.session_state.default_venue)
+        st.text_input("🗓 演舞日", key="input_date", on_change=update_url)
+        st.text_input("🎪 会場", key="input_venue", on_change=update_url)
+        
+        st.query_params["date"] = st.session_state.input_date
+        st.query_params["venue"] = st.session_state.input_venue
         st.divider()
 
         st.write("📝 ベース文章の微調整")
+        st.caption("※ここは再読み込みで消えるので、ベース文の大幅な変更はスプレッドシートで行ってください")
         st.session_state.editing_x = st.text_area("🐦 X用ベース", st.session_state.editing_x, height=120)
         st.session_state.editing_i = st.text_area("📸 インスタ用ベース", st.session_state.editing_i, height=120)
         st.session_state.joint_base_text = st.text_area("🔥 速報(合同)用ベース", st.session_state.joint_base_text, height=120)
@@ -130,7 +231,9 @@ if not df_teams.empty:
         with col_search:
             query = st.text_input("チーム名検索", placeholder="ひらぎし、科学大など")
         with col_part:
-            part_num = st.text_input("part", value="1", key="single_part")
+            def update_part():
+                st.query_params["part"] = st.session_state.single_part
+            part_num = st.text_input("part", value=st.query_params.get("part", "1"), key="single_part", on_change=update_part)
             
         if query:
             norm_q = normalize_text(query)
@@ -144,8 +247,8 @@ if not df_teams.empty:
                     row_i = clean_social_id(row['インスタ'])
                     row_tags = format_hashtags(row['タグ'])
                     
-                    res_x = st.session_state.editing_x.format(名前=row['名前'], X=row_x, インスタ=row_i, タグ=row_tags, part=part_num, 日付=target_date, 会場=target_venue, イベント名=target_event)
-                    res_i = st.session_state.editing_i.format(名前=row['名前'], X=row_x, インスタ=row_i, タグ=row_tags, part=part_num, 日付=target_date, 会場=target_venue, イベント名=target_event)
+                    res_x = st.session_state.editing_x.format(名前=row['名前'], X=row_x, インスタ=row_i, タグ=row_tags, part=part_num, 日付=st.session_state.input_date, 会場=st.session_state.input_venue, イベント名=target_event)
+                    res_i = st.session_state.editing_i.format(名前=row['名前'], X=row_x, インスタ=row_i, タグ=row_tags, part=part_num, 日付=st.session_state.input_date, 会場=st.session_state.input_venue, イベント名=target_event)
                     
                     t_x, t_i = st.tabs(["🐦 X (Twitter)", "📸 Instagram"])
                     
@@ -174,8 +277,8 @@ if not df_teams.empty:
                     row_i = clean_social_id(row['インスタ'])
                     row_tags = format_hashtags(row['タグ'])
                     
-                    f_x = st.session_state.editing_x.format(名前=row['名前'], X=row_x, インスタ=row_i, タグ=row_tags, part=bulk_part, 日付=target_date, 会場=target_venue, イベント名=target_event)
-                    f_i = st.session_state.editing_i.format(名前=row['名前'], X=row_x, インスタ=row_i, タグ=row_tags, part=bulk_part, 日付=target_date, 会場=target_venue, イベント名=target_event)
+                    f_x = st.session_state.editing_x.format(名前=row['名前'], X=row_x, インスタ=row_i, タグ=row_tags, part=bulk_part, 日付=st.session_state.input_date, 会場=st.session_state.input_venue, イベント名=target_event)
+                    f_i = st.session_state.editing_i.format(名前=row['名前'], X=row_x, インスタ=row_i, タグ=row_tags, part=bulk_part, 日付=st.session_state.input_date, 会場=st.session_state.input_venue, イベント名=target_event)
                     
                     with st.expander(f"✅ {row['名前']}"):
                         st.write("**🐦 X用**")
@@ -214,11 +317,10 @@ if not df_teams.empty:
                     if t_name in st.session_state.selected_joint_teams:
                         row = df_teams[df_teams["名前"] == t_name].iloc[0]
                         x_id = clean_social_id(row['X'])
-                        # 🌟 ここでチーム名の後ろに「さん」を自動付与！
                         team_texts.append(f"🎤 {t_name} さん {x_id}".strip())
                     
                 teams_text = "\n".join(team_texts)
-                final_text = st.session_state.joint_base_text.replace("{teams}", teams_text).replace("{日付}", target_date).replace("{会場}", target_venue).replace("{イベント名}", target_event)
+                final_text = st.session_state.joint_base_text.replace("{teams}", teams_text).replace("{日付}", st.session_state.input_date).replace("{会場}", st.session_state.input_venue).replace("{イベント名}", target_event)
                 final_text = st.text_area("✍️ 最終確認", value=final_text, height=200)
                 
                 char_count = get_x_char_count(final_text)
