@@ -113,7 +113,7 @@ def format_hashtags(tag_text):
     tags = re.split(r'[\s ]+', text)
     return "\n".join([t for t in tags if t])
 
-# 🌟 演舞日・会場をURLに記憶させる関数（復活！）
+# 🌟 演舞日・会場をURLに記憶させる関数
 def update_url():
     st.query_params["date"] = st.session_state.input_date
     st.query_params["venue"] = st.session_state.input_venue
@@ -146,25 +146,34 @@ with st.sidebar:
         if "selected_event" not in st.session_state: st.session_state.selected_event = event_names[0]
         target_event = st.selectbox("🎪 イベントを選択", event_names, index=event_names.index(st.session_state.selected_event))
         
+        # 🌟 イベントが切り替わったかどうかの判定
         if "last_loaded_event" not in st.session_state or st.session_state.last_loaded_event != target_event:
             row = df_templates[df_templates["イベント名"] == target_event].iloc[0]
             st.session_state.editing_x = row["X用"]
             st.session_state.editing_i = row["インスタ用"]
             st.session_state.joint_base_text = row["合同用"] if "合同用" in row.index and row["合同用"] else "🗓️{日付}\n🎪{会場} より速報！🔥\n\n{teams}\n\n#{イベント名}"
+            
+            # 優先順位①：スプレッドシートの初期値
+            new_date = str(row["日付"]) if "日付" in row.index else ""
+            new_venue = str(row["会場"]) if "会場" in row.index else ""
+            
+            # 優先順位②：「アプリを開いた直後」だけは、URLに記憶があればURLを優先する
+            if "last_loaded_event" not in st.session_state:
+                new_date = st.query_params.get("date", new_date)
+                new_venue = st.query_params.get("venue", new_venue)
+            
+            # メモリ（session_state）とURLの両方に正しい情報をセット！
+            st.session_state.input_date = new_date
+            st.session_state.input_venue = new_venue
+            st.query_params["date"] = new_date
+            st.query_params["venue"] = new_venue
+            
             st.session_state.last_loaded_event = target_event
 
-        # 🌟 URLに記憶があればそれを、なければスプレッドシートの値をセット
-        row = df_templates[df_templates["イベント名"] == target_event].iloc[0]
-        def_date = st.query_params.get("date", str(row["日付"]) if "日付" in row.index else "")
-        def_venue = st.query_params.get("venue", str(row["会場"]) if "会場" in row.index else "")
-
         st.write("📅 撮影データ情報")
-        target_date = st.text_input("🗓 演舞日", value=def_date, key="input_date", on_change=update_url)
-        target_venue = st.text_input("🎪 会場", value=def_venue, key="input_venue", on_change=update_url)
-        
-        # 初回起動時にも今の状態をURLにセットしておく
-        st.query_params["date"] = target_date
-        st.query_params["venue"] = target_venue
+        # keyを設定することで、st.session_state.input_date と直接リンクされます
+        target_date = st.text_input("🗓 演舞日", key="input_date", on_change=update_url)
+        target_venue = st.text_input("🎪 会場", key="input_venue", on_change=update_url)
         st.divider()
 
         st.write("📝 ベース文章の微調整")
@@ -190,7 +199,9 @@ if not df_teams.empty:
         with col_part:
             def update_part():
                 st.query_params["part"] = st.session_state.single_part
-            part_num = st.text_input("part", value=st.query_params.get("part", "1"), key="single_part", on_change=update_part)
+            if "single_part" not in st.session_state:
+                st.session_state.single_part = st.query_params.get("part", "1")
+            part_num = st.text_input("part", key="single_part", on_change=update_part)
             
         if query:
             norm_q = normalize_text(query)
