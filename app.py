@@ -20,12 +20,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 0. 共通関数（🌟 絶対に拾う総当たりエイリアス検索！）
+# 0. 共通関数
 # ==========================================
 def extract_teams_from_blob(blob, df_teams):
     if not blob: return []
     
-    # タイムテーブルを小文字＆半角に
     blob_norm = unicodedata.normalize('NFKC', blob).lower()
     blob_norm = blob_norm.replace("ê", "e").replace("櫻", "桜").replace("樂", "楽").replace("眞", "真").replace("邊", "辺").replace("澤", "沢").replace("濱", "浜")
     
@@ -35,7 +34,6 @@ def extract_teams_from_blob(blob, df_teams):
     ignore_words = {"だいがく", "大学", "学園", "高校", "中学", "北海道", "札幌", "さっぽろ", "ジュニア", "キッズ", "の", "会"}
     geo_prefixes = ["北海道大学", "北海道", "札幌大学", "札幌", "東海大学", "科学大学", "大学", "学園"]
     
-    # 1. 各チームの「あらゆる略称・分解パターン」を生成
     search_dict = {}
     for index, row in df_teams.iterrows():
         t_name = row["名前"]
@@ -57,22 +55,19 @@ def extract_teams_from_blob(blob, df_teams):
         core = strip_pfx(t_clean)
         if len(core) >= 2: aliases.add(core)
         
-        # 固有のコア名（「平岸天神」や「響」など）を抽出
         core_no_geo = core
         for g in geo_prefixes:
             if core_no_geo.startswith(g):
                 core_no_geo = core_no_geo[len(g):]
                 break
         
-        # コア名が漢字1文字（例: 響）または2文字以上なら追加
         if len(core_no_geo) >= 2 or (len(core_no_geo) == 1 and re.match(r'[\u4e00-\u9fa5]', core_no_geo)):
             aliases.add(core_no_geo)
             if len(core_no_geo) >= 2:
-                aliases.add(core_no_geo[:2]) # 平岸
-                aliases.add(core_no_geo[:3]) # 平岸天
+                aliases.add(core_no_geo[:2]) 
+                aliases.add(core_no_geo[:3]) 
                 aliases.add(core_no_geo[:4])
                 
-        # スペースで区切られた部分（La feteなど）を追加
         parts = re.split(r'[\s ・（）()\[\]〜～\-－&＆_＿]', t_norm)
         for p in parts:
             if len(p) >= 2:
@@ -80,12 +75,10 @@ def extract_teams_from_blob(blob, df_teams):
                 cp = strip_pfx(p)
                 if len(cp) >= 2: aliases.add(cp)
                 
-        # ノイズを除外して、文字数の長い順（誤爆防止）に並べる
         final_aliases = [a for a in aliases if len(a) >= 2 and a not in ignore_words]
         final_aliases.sort(key=len, reverse=True)
         search_dict[t_name] = final_aliases
 
-    # 2. タイムテーブルを1行ずつチェックして順番を維持
     lines = blob_norm.split('\n')
     for line in lines:
         line_str = line.strip()
@@ -96,14 +89,12 @@ def extract_teams_from_blob(blob, df_teams):
         line_found = []
         for t_name, aliases in search_dict.items():
             for alias in aliases:
-                # 略称のどれか1つでも行に含まれていたらヒット！
                 if alias in line_str or alias in line_no_space:
                     pos = line_no_space.find(alias)
                     if pos == -1: pos = line_str.find(alias)
                     line_found.append((pos, t_name, len(alias)))
                     break 
         
-        # 行の中で見つかった順（左から順）に並べ替え
         line_found.sort(key=lambda x: (x[0], -x[2]))
         
         for item in line_found:
@@ -168,8 +159,17 @@ with st.sidebar:
     
     if not df_templates.empty:
         event_names = df_templates["イベント名"].tolist()
-        if "selected_event" not in st.session_state: st.session_state.selected_event = event_names[0]
-        target_event = st.selectbox("🎪 イベントを選択", event_names, index=event_names.index(st.session_state.selected_event))
+        
+        # 🌟 追加：URLからイベント名を取得（なければ1番目）
+        url_event = st.query_params.get("event", event_names[0])
+        if url_event not in event_names:
+            url_event = event_names[0]
+            
+        # 取得したイベント名を初期値としてセット
+        target_event = st.selectbox("🎪 イベントを選択", event_names, index=event_names.index(url_event))
+        
+        # 🌟 追加：選んだイベント名をURLに記憶させる
+        st.query_params["event"] = target_event
         
         if "last_loaded_event" not in st.session_state or st.session_state.last_loaded_event != target_event:
             row = df_templates[df_templates["イベント名"] == target_event].iloc[0]
@@ -250,7 +250,7 @@ if not df_teams.empty:
                         st.code(res_i, language="text")
                         st.link_button("📸 インスタを開く（※コピーしてから押してね）", "https://www.instagram.com/", use_container_width=True)
                 except KeyError as e:
-                    st.error(f"⚠️ テンプレートエラー: 登録されていない {e} が含まれています。")
+                    st.error(f"⚠️️ テンプレートエラー: 登録されていない {e} が含まれています。")
 
     # --- タブ2: 一括生成 ---
     with tab2:
@@ -305,6 +305,7 @@ if not df_teams.empty:
                     if t_name in st.session_state.selected_joint_teams:
                         row = df_teams[df_teams["名前"] == t_name].iloc[0]
                         x_id = clean_social_id(row['X'])
+                        # 🌟 ここでチーム名の後ろに「さん」を自動付与！
                         team_texts.append(f"🎤 {t_name} さん {x_id}".strip())
                     
                 teams_text = "\n".join(team_texts)
