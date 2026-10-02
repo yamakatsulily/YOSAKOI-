@@ -20,21 +20,15 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 0. 共通関数
+# 0. 共通関数（🚀 軽量化・爆速キャッシュ仕様）
 # ==========================================
-def extract_teams_from_blob(blob, df_teams):
-    if not blob: return []
-    
-    blob_norm = unicodedata.normalize('NFKC', blob).lower()
-    blob_norm = blob_norm.replace("ê", "e").replace("櫻", "桜").replace("樂", "楽").replace("眞", "真").replace("邊", "辺").replace("澤", "沢").replace("濱", "浜")
-    
-    found_teams = []
-    
+@st.cache_data(ttl=600)  # 🌟 ここで「総当たりリスト」を10分間暗記させます！（爆速化の要）
+def build_search_dict(df_teams):
+    search_dict = {}
     prefixes_to_strip = ['よさこい', 'yosakoi', 'ヨサコイ', 'ソーラン', 'そーらん', 'チーム', 'ちーむ', 'ダンス', 'プロジェクト', '合同', '学生']
     ignore_words = {"だいがく", "大学", "学園", "高校", "中学", "北海道", "札幌", "さっぽろ", "ジュニア", "キッズ", "の", "会"}
     geo_prefixes = ["北海道大学", "北海道", "札幌大学", "札幌", "東海大学", "科学大学", "大学", "学園"]
     
-    search_dict = {}
     for index, row in df_teams.iterrows():
         t_name = row["名前"]
         t_norm = unicodedata.normalize('NFKC', t_name).lower()
@@ -78,6 +72,17 @@ def extract_teams_from_blob(blob, df_teams):
         final_aliases = [a for a in aliases if len(a) >= 2 and a not in ignore_words]
         final_aliases.sort(key=len, reverse=True)
         search_dict[t_name] = final_aliases
+        
+    return search_dict
+
+def extract_teams_from_blob(blob, df_teams):
+    if not blob: return []
+    
+    blob_norm = unicodedata.normalize('NFKC', blob).lower()
+    blob_norm = blob_norm.replace("ê", "e").replace("櫻", "桜").replace("樂", "楽").replace("眞", "真").replace("邊", "辺").replace("澤", "沢").replace("濱", "浜")
+    
+    found_teams = []
+    search_dict = build_search_dict(df_teams) # 暗記したリストを呼び出すだけなので一瞬！
 
     lines = blob_norm.split('\n')
     for line in lines:
@@ -140,7 +145,7 @@ def update_url():
 TEAM_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR4oPDAGy6lDROLhiBEhDKLNEI-b82ghaBNr3yli5uVZbizgZmSo2Gidv0HjuZbWXnX5-yo0TJMmM99/pub?gid=0&single=true&output=csv"
 TEMPLATE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR4oPDAGy6lDROLhiBEhDKLNEI-b82ghaBNr3yli5uVZbizgZmSo2Gidv0HjuZbWXnX5-yo0TJMmM99/pub?gid=2050053305&single=true&output=csv"
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=600)  # 🌟 ここも60秒→10分(600秒)に変更！通信ラグを削減！
 def load_data(url):
     try: return pd.read_csv(url).fillna("")
     except: return pd.DataFrame()
@@ -160,15 +165,11 @@ with st.sidebar:
     if not df_templates.empty:
         event_names = df_templates["イベント名"].tolist()
         
-        # 🌟 追加：URLからイベント名を取得（なければ1番目）
         url_event = st.query_params.get("event", event_names[0])
         if url_event not in event_names:
             url_event = event_names[0]
             
-        # 取得したイベント名を初期値としてセット
         target_event = st.selectbox("🎪 イベントを選択", event_names, index=event_names.index(url_event))
-        
-        # 🌟 追加：選んだイベント名をURLに記憶させる
         st.query_params["event"] = target_event
         
         if "last_loaded_event" not in st.session_state or st.session_state.last_loaded_event != target_event:
@@ -250,7 +251,7 @@ if not df_teams.empty:
                         st.code(res_i, language="text")
                         st.link_button("📸 インスタを開く（※コピーしてから押してね）", "https://www.instagram.com/", use_container_width=True)
                 except KeyError as e:
-                    st.error(f"⚠️️ テンプレートエラー: 登録されていない {e} が含まれています。")
+                    st.error(f"⚠ テンプレートエラー: 登録されていない {e} が含まれています。")
 
     # --- タブ2: 一括生成 ---
     with tab2:
@@ -305,7 +306,6 @@ if not df_teams.empty:
                     if t_name in st.session_state.selected_joint_teams:
                         row = df_teams[df_teams["名前"] == t_name].iloc[0]
                         x_id = clean_social_id(row['X'])
-                        # 🌟 ここでチーム名の後ろに「さん」を自動付与！
                         team_texts.append(f"🎤 {t_name} さん {x_id}".strip())
                     
                 teams_text = "\n".join(team_texts)
